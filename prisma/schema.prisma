@@ -1,0 +1,167 @@
+// Datenmodell für die Dienstplanung.
+// Cloud: PostgreSQL (Neon, EU-Region). Verbindung über DATABASE_URL (.env / Vercel).
+// Hinweis: Datumswerte werden als String "YYYY-MM-DD" gespeichert, um
+// Zeitzonen-Probleme zu vermeiden (reine Kalendertage, keine Uhrzeit).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  category     Int // 1 = Vordergrund + HK, 2 = nur Vordergrund
+  role         String   @default("DOCTOR") // DOCTOR | SUBADMIN | ADMIN
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  absences    Absence[]
+  wishes      Wish[]
+  assignments Assignment[]
+  comments    Comment[]            @relation("CommentAuthor")
+  groups      UserGroup[]
+  carryovers  Carryover[]
+  resetTokens PasswordResetToken[]
+}
+
+model Absence {
+  id           String    @id @default(cuid())
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       String
+  date         String // YYYY-MM-DD
+  type         String // VACATION | SPECIAL  (Sonderurlaub zählt nicht ins Konto, kein Limit)
+  status       String    @default("PENDING") // PENDING | APPROVED
+  groupId      String    @default("") // Tage eines zusammenhängenden Antrags teilen diese ID
+  approvedAt   DateTime? // wann freigegeben
+  approvedById String? // wer freigegeben hat
+  createdAt    DateTime  @default(now()) // ursprüngliches Eintragsdatum
+  updatedAt    DateTime  @default(now()) @updatedAt // letzte Änderung
+
+  @@unique([userId, date])
+  @@index([date])
+  @@index([groupId])
+}
+
+model Wish {
+  id           String    @id @default(cuid())
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       String
+  date         String // YYYY-MM-DD (Freiwunsch: an diesem Tag möglichst kein Dienst)
+  status       String    @default("PENDING") // PENDING | APPROVED
+  groupId      String    @default("")
+  approvedAt   DateTime?
+  approvedById String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @default(now()) @updatedAt
+
+  @@unique([userId, date])
+  @@index([date])
+  @@index([groupId])
+}
+
+model Holiday {
+  id   String @id @default(cuid())
+  date String @unique // YYYY-MM-DD
+  name String
+  year Int
+}
+
+model Plan {
+  id         String    @id @default(cuid())
+  year       Int       @unique
+  status     String    @default("DRAFT") // DRAFT | RELEASED
+  createdAt  DateTime  @default(now())
+  releasedAt DateTime?
+  reportJson String? // Engpassbericht als JSON
+
+  assignments Assignment[]
+}
+
+model Assignment {
+  id     String @id @default(cuid())
+  plan   Plan   @relation(fields: [planId], references: [id], onDelete: Cascade)
+  planId String
+  date   String // YYYY-MM-DD
+  slot   String // WEEKDAY | HK | VG
+  user   User   @relation(fields: [userId], references: [id])
+  userId String
+
+  @@index([planId, date])
+}
+
+model Settings {
+  id                  Int @id @default(1)
+  maxConcurrentAbsent Int @default(5) // max. gleichzeitig abwesend
+  vacationDaysPerYear Int @default(30) // Werktage Mo–Fr
+  maxWeekendsPerMonth Int @default(2) // Obergrenze Wochenenden/Monat pro Arzt
+}
+
+// Subgruppen / Teams (Mehrfachzugehörigkeit über UserGroup)
+model Group {
+  id        String      @id @default(cuid())
+  name      String      @unique
+  createdAt DateTime    @default(now())
+  members   UserGroup[]
+}
+
+model UserGroup {
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId  String
+  group   Group  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  groupId String
+
+  @@id([userId, groupId])
+  @@index([groupId])
+}
+
+// Übertrag von Resturlaubstagen aus dem Vorjahr (pro Mitarbeiter und Jahr)
+model Carryover {
+  id     String @id @default(cuid())
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  year   Int // Jahr, FÜR das die Tage zusätzlich gelten
+  days   Int    @default(0)
+
+  @@unique([userId, year])
+}
+
+// Kommentare zu einem Antrag (über groupId), sichtbar für alle Sub-Admins.
+model Comment {
+  id        String   @id @default(cuid())
+  text      String
+  createdAt DateTime @default(now())
+  author    User     @relation("CommentAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  authorId  String
+  groupId   String // Antrag (Absence/Wish groupId)
+
+  @@index([groupId])
+}
+
+// Protokoll je Antrag: wann eingetragen, geändert, freigegeben, abgelehnt.
+model LeaveLog {
+  id       String   @id @default(cuid())
+  groupId  String
+  action   String // CREATED | MODIFIED | APPROVED | REJECTED
+  at       DateTime @default(now())
+  byUserId String? // wer die Aktion ausgeführt hat
+  detail   String? // z.B. "06.07.–10.07. Urlaub"
+
+  @@index([groupId])
+}
+
+// Passwort-Zurücksetzen per Token (im Prototyp wird der Link lokal angezeigt)
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+}

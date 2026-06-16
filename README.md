@@ -1,36 +1,59 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Dienstplanung Oberärzte — Prototyp
 
-## Getting Started
+Web-App zur jährlichen Dienstplanung. Oberärzte tragen Urlaub, Sonderurlaub und
+Freiwünsche ein; per Knopfdruck erstellt ein Admin einen vorläufigen Dienstplan
+mit Engpassbericht und gibt ihn frei. Fachliche Grundlage: `../Konzept.md`.
 
-First, run the development server:
+## Technik
+- **Next.js 16** (React, TypeScript) + **Tailwind CSS**
+- **Prisma 7** mit **PostgreSQL** (Neon, EU-Region) über einen Driver-Adapter.
+- Planungs-Engine als Heuristik in `src/lib/scheduler.ts` (austauschbar gegen
+  einen Constraint-Solver wie OR-Tools CP-SAT).
 
+## Erststart
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cd dienstplan
+npm install
+cp .env.example .env        # DATABASE_URL (Neon), SESSION_SECRET, SEED_PASSWORD eintragen
+npx prisma migrate dev      # legt die Tabellen an
+npm run seed                # Beispieldaten: 1 Admin + 20 Oberärzte, NRW-Feiertage
+npm run dev                 # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Deployment
+Kostenloses Cloud-Deployment (Vercel + Neon, EU): siehe **[DEPLOY.md](DEPLOY.md)**.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Demo-Logins (Passwort jeweils: `passwort`)
+- **Admin:** `admin@klinik.de`
+- **Arzt:** `anna.bauer@klinik.de` (Kat. 1), `mara.neumann@klinik.de` (Kat. 2) u. a.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Funktionen
+- **Login** pro Arzt (E-Mail/Passwort, gehashte Passwörter, signierte Session).
+- **Mein Kalender:** Urlaub / Sonderurlaub / Freiwunsch je Tag eintragen.
+  - Urlaubskonto 30 Werktage (Mo–Fr) mit Warnung bei Überschreitung.
+  - First-come-first-serve: max. 5 gleichzeitig im Urlaub (harte Sperre).
+  - Sonderurlaub ohne Limit, zählt nicht ins Konto.
+- **Team-Abwesenheiten:** Jahresübersicht, zeigt Auslastung pro Tag.
+- **Admin – Plan erstellen:** vorläufigen Plan berechnen, Engpassbericht
+  (unbesetzte Stellen, nicht erfüllte Freiwünsche, Verteilung), dann freigeben.
+- **Dienstplan:** freigegebener Plan für alle sichtbar; eigene Dienste markiert.
+- **Admin – Nutzerverwaltung & Einstellungen** (Limits, Feiertage NRW).
 
-## Learn More
+## Dienstregeln (in der Engine abgebildet)
+- Mo–Do: ein Kat.-1-Arzt (Vordergrund + HK).
+- Wochenende (Fr–So-Block): Kat. 1 macht HK + Vordergrund Fr; Vordergrund Sa+So
+  durch Kat. 2 (Split) oder denselben Kat.-1-Arzt (Solo).
+- Feiertag: wie ein einzelner Wochenendtag (HK + Vordergrund).
+- Montag nach Wochenenddienst frei.
+- Möglichst gleichmäßige Verteilung; Kat. 2 übernimmt mehr Wochenend-Vordergründe.
 
-To learn more about Next.js, take a look at the following resources:
+## Hilfsskripte
+```bash
+npx tsx scripts/test-scheduler.ts   # prüft Abdeckung & Verteilung gegen Seed-Daten
+npx tsx scripts/make-plan.ts        # erzeugt einen Demo-Plan in der DB
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Vor dem Produktivbetrieb (offen)
+- PostgreSQL (EU) statt SQLite; `SESSION_SECRET` durch echten Zufallswert ersetzen.
+- DSGVO: AVV mit Hoster, HTTPS, Backup, Audit-Log.
+- Passwort-Reset / „Passwort ändern" für Ärzte.
