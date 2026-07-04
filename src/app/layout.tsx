@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Dienstplanung Oberärzte",
-  description: "Urlaub, Freiwünsche und jährliche Dienstplanerstellung",
+  title: "Team-Planer",
+  description: "Abwesenheiten, Urlaubsverwaltung und Dienstplanung",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

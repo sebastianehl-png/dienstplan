@@ -14,20 +14,23 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     { href: "/dashboard", label: "Übersicht" },
     { href: "/calendar", label: "Mein Kalender" },
     { href: "/entries", label: "Meine Einträge" },
-    { href: "/matrix", label: "Urlaubsübersicht" },
+    { href: "/matrix", label: "Abwesenheiten" },
     { href: "/plan", label: "Dienstplan" },
+    { href: "/profile", label: "Profil" },
   ];
   const staffNav = [
     { href: "/admin/approvals", label: "Freigaben" },
     { href: "/admin/requests", label: "Anträge" },
+    { href: "/admin/personnel", label: "Personal" },
     { href: "/admin/plan", label: "Plan erstellen" },
     { href: "/admin/users", label: "Nutzer" },
     { href: "/admin/groups", label: "Gruppen" },
+    { href: "/admin/absence-types", label: "Abw.-Arten" },
     { href: "/admin/carryover", label: "Resturlaub" },
   ];
   const adminNav = [{ href: "/admin/settings", label: "Einstellungen" }];
 
-  const roleLabel = user.role === "ADMIN" ? "Admin" : user.role === "SUBADMIN" ? "Sub-Admin" : "Arzt";
+  const roleLabel = user.role === "ADMIN" ? "Admin" : user.role === "SUBADMIN" ? "Sub-Admin" : "Mitarbeiter";
 
   return (
     <div className="flex min-h-full flex-1 flex-col">

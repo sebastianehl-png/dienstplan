@@ -16,10 +16,20 @@ model User {
   email        String   @unique
   passwordHash String
   name         String
-  category     Int // 1 = Vordergrund + HK, 2 = nur Vordergrund
-  role         String   @default("DOCTOR") // DOCTOR | SUBADMIN | ADMIN
+  category     Int // Dienstplan-Kategorie: 1 = Vordergrund + HK, 2 = nur Vordergrund
+  role         String   @default("DOCTOR") // DOCTOR (= Mitarbeiter) | SUBADMIN | ADMIN
   active       Boolean  @default(true)
   createdAt    DateTime @default(now())
+
+  // --- Digitale Personalakte (Stammdaten) ---
+  position     String? // Funktion / Stellenbezeichnung
+  phone        String?
+  address      String?
+  birthDate    String? // YYYY-MM-DD
+  hireDate     String? // Eintrittsdatum YYYY-MM-DD
+  weeklyHours  Float? // Wochenstunden (Basis für spätere Zeiterfassung)
+  emergency    String? // Notfallkontakt
+  staffNotes   String? // Notizen – nur für Staff sichtbar
 
   absences    Absence[]
   wishes      Wish[]
@@ -30,14 +40,31 @@ model User {
   resetTokens PasswordResetToken[]
 }
 
+// Frei definierbare Abwesenheitsarten (Timebutler-Stil).
+// code = Speicherwert in Absence.type ("VACATION"/"SPECIAL" sind eingebaut).
+model AbsenceType {
+  id               String  @id @default(cuid())
+  code             String  @unique
+  name             String  @unique
+  short            String // Kürzel in der Übersicht, z.B. U, SU, K, FB
+  color            String // Hex-Farbe, z.B. #eab308
+  countsAsVacation Boolean @default(false) // zählt ins Urlaubskonto (Werktage)
+  countsForLimit   Boolean @default(false) // zählt ins Max-gleichzeitig-Limit
+  needsApproval    Boolean @default(true) // false = sofort wirksam (z.B. Krankheit)
+  builtin          Boolean @default(false) // eingebaute Arten nicht löschbar
+  active           Boolean @default(true)
+  sortOrder        Int     @default(100)
+}
+
 model Absence {
   id           String    @id @default(cuid())
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId       String
   date         String // YYYY-MM-DD
-  type         String // VACATION | SPECIAL  (Sonderurlaub zählt nicht ins Konto, kein Limit)
-  status       String    @default("PENDING") // PENDING | APPROVED
+  type         String // Code einer AbsenceType (z.B. VACATION, SPECIAL, SICK, …)
+  status       String    @default("PENDING") // PENDING | APPROVED | REJECTED
   groupId      String    @default("") // Tage eines zusammenhängenden Antrags teilen diese ID
+  substituteId String? // Vertretung während der Abwesenheit (User-Id)
   approvedAt   DateTime? // wann freigegeben
   approvedById String? // wer freigegeben hat
   createdAt    DateTime  @default(now()) // ursprüngliches Eintragsdatum

@@ -5,15 +5,18 @@ import { weekday } from "@/lib/dates";
 import CommentBox, { type CommentItem } from "@/app/(app)/entries/CommentBox";
 import { RowActions } from "@/app/(app)/admin/approvals/ApprovalControls";
 
-export type Cell = { letter: "U" | "SU" | "FW"; type: "VACATION" | "SPECIAL" | "WISH"; status: string; groupId: string };
+export type Cell = { short: string; name: string; color: string; status: string; groupId: string };
+export type LegendItem = { short: string; name: string; color: string };
 export type ReqDetail = {
   groupId: string;
   userName: string;
-  kind: "VACATION" | "SPECIAL" | "WISH";
+  kindName: string;
+  substituteName: string | null;
   start: string;
   end: string;
   days: number;
   weekdays: number;
+  vacationCounting: boolean;
   status: string;
   createdAt: string;
   modifiedAt: string | null;
@@ -22,11 +25,18 @@ export type ReqDetail = {
   comments: CommentItem[];
 };
 
-// Farben: Urlaub gelb, Sonderurlaub blau, Freiwunsch cyan, abgelehnt rot.
-const COLORS: Record<string, string> = { VACATION: "#eab308", SPECIAL: "#3b82f6", WISH: "#06b6d4" };
 const REJECTED_COLOR = "#ef4444";
-const KIND_LABEL: Record<string, string> = { VACATION: "Urlaub", SPECIAL: "Sonderurlaub", WISH: "Freiwunsch" };
 const STATUS_LABEL: Record<string, string> = { APPROVED: "freigegeben", PENDING: "ausstehend", REJECTED: "abgelehnt", MIXED: "teilweise freigegeben" };
+
+// Helle Farben (z.B. Gelb) brauchen dunkle Schrift.
+function textOn(color: string): string {
+  const hex = color.replace("#", "");
+  if (hex.length !== 6) return "#fff";
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  return 0.299 * r + 0.587 * g + 0.114 * b > 160 ? "#18181b" : "#ffffff";
+}
 
 function dt(iso: string): string {
   return new Date(iso).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -38,6 +48,7 @@ export default function MatrixGrid({
   days,
   holidays,
   cells,
+  legend,
   isStaff,
   requests,
   currentUserId,
@@ -46,6 +57,7 @@ export default function MatrixGrid({
   days: string[];
   holidays: string[];
   cells: Record<string, Cell>;
+  legend: LegendItem[];
   isStaff: boolean;
   requests: Record<string, ReqDetail>;
   currentUserId: string;
@@ -86,23 +98,21 @@ export default function MatrixGrid({
 
                   const rejected = cell.status === "REJECTED";
                   const approved = cell.status === "APPROVED";
-                  const color = rejected ? REJECTED_COLOR : COLORS[cell.type];
+                  const color = rejected ? REJECTED_COLOR : cell.color;
                   const solid = approved || rejected;
                   const style: React.CSSProperties = solid
-                    ? { backgroundColor: color }
-                    : { backgroundImage: `repeating-linear-gradient(45deg, ${color} 0 3px, transparent 3px 6px)` };
-                  // gelb braucht dunkle Schrift
-                  const textCls = solid ? (cell.type === "VACATION" && !rejected ? "text-zinc-900" : "text-white") : "text-zinc-700";
+                    ? { backgroundColor: color, color: textOn(color) }
+                    : { backgroundImage: `repeating-linear-gradient(45deg, ${color} 0 3px, transparent 3px 6px)`, color: "#3f3f46" };
                   const clickable = !!requests[cell.groupId];
                   return (
                     <td
                       key={d}
                       onClick={clickable ? () => setOpenGroup(cell.groupId) : undefined}
-                      title={`${u.name}: ${KIND_LABEL[cell.type]} (${STATUS_LABEL[cell.status] ?? cell.status})${clickable ? " – klicken für Details" : ""}`}
-                      className={`h-6 w-6 border-t border-l border-zinc-100 text-center align-middle text-[9px] font-semibold ${textCls} ${clickable ? "cursor-pointer" : ""}`}
+                      title={`${u.name}: ${cell.name} (${STATUS_LABEL[cell.status] ?? cell.status})${clickable ? " – klicken für Details" : ""}`}
+                      className={`h-6 w-6 border-t border-l border-zinc-100 text-center align-middle text-[9px] font-semibold ${clickable ? "cursor-pointer" : ""}`}
                       style={style}
                     >
-                      {cell.letter}
+                      {cell.short}
                     </td>
                   );
                 })}
@@ -114,9 +124,9 @@ export default function MatrixGrid({
 
       {/* Legende */}
       <div className="mt-3 flex flex-wrap gap-4 text-xs text-zinc-500">
-        <Legend color={COLORS.VACATION} label="Urlaub (U)" />
-        <Legend color={COLORS.SPECIAL} label="Sonderurlaub (SU)" />
-        <Legend color={COLORS.WISH} label="Freiwunsch (FW)" />
+        {legend.map((l) => (
+          <Legend key={l.short + l.name} color={l.color} label={`${l.name} (${l.short})`} />
+        ))}
         <Legend color={REJECTED_COLOR} label="abgelehnt" />
         <span className="flex items-center gap-1.5">
           <span className="inline-block h-3 w-3 rounded" style={{ backgroundImage: "repeating-linear-gradient(45deg, #eab308 0 2px, transparent 2px 4px)" }} />
@@ -132,9 +142,9 @@ export default function MatrixGrid({
               <div>
                 <h2 className="text-lg font-semibold text-zinc-900">{detail.userName}</h2>
                 <p className="text-sm text-zinc-600">
-                  {KIND_LABEL[detail.kind]} ·{" "}
+                  {detail.kindName} ·{" "}
                   {detail.start === detail.end ? de(detail.start) : `${de(detail.start)} – ${de(detail.end)}`} ({detail.days} Tage
-                  {detail.kind === "VACATION" ? `, ${detail.weekdays} Werktage` : ""})
+                  {detail.vacationCounting ? `, ${detail.weekdays} Werktage` : ""})
                 </p>
               </div>
               <button onClick={() => setOpenGroup(null)} className="rounded-md px-2 py-1 text-zinc-400 hover:bg-zinc-100">✕</button>
@@ -142,6 +152,7 @@ export default function MatrixGrid({
 
             <div className="mt-3 space-y-1 text-sm">
               <Row label="Status" value={STATUS_LABEL[detail.status] ?? detail.status} />
+              {detail.substituteName && <Row label="Vertretung" value={detail.substituteName} />}
               <Row label="Eingetragen" value={dt(detail.createdAt)} />
               {detail.modifiedAt && <Row label="Geändert" value={dt(detail.modifiedAt)} />}
               {detail.approvedAt && <Row label="Freigegeben" value={`${dt(detail.approvedAt)}${detail.approvedByName ? ` von ${detail.approvedByName}` : ""}`} />}

@@ -21,7 +21,7 @@ export default async function UsersPage() {
       <h1 className="text-2xl font-semibold text-zinc-900">Nutzerverwaltung</h1>
 
       <div className="rounded-xl border border-zinc-200 bg-white p-5">
-        <h2 className="mb-3 font-medium text-zinc-900">Neuen Oberarzt anlegen</h2>
+        <h2 className="mb-3 font-medium text-zinc-900">Neue:n Mitarbeiter:in anlegen</h2>
         <UserForm canCreateAdmin={isAdmin} />
       </div>
 

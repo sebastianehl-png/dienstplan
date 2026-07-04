@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser, isStaff } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import { getRequests } from "@/lib/requests";
+import { getAbsenceTypes } from "@/lib/absence-types";
 import RequestCard from "@/components/RequestCard";
 import { BulkApprove } from "./ApprovalControls";
 
@@ -11,7 +13,12 @@ export default async function ApprovalsPage() {
   if (!me) redirect("/login");
   if (!isStaff(me.role)) redirect("/dashboard");
 
-  const requests = await getRequests({ yearPrefix: String(PLAN_YEAR), pendingOnly: true });
+  const [requests, types, users] = await Promise.all([
+    getRequests({ yearPrefix: String(PLAN_YEAR), pendingOnly: true }),
+    getAbsenceTypes(),
+    prisma.user.findMany({ where: { active: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+  ]);
+  const typeOptions = types.map((t) => ({ code: t.code, name: t.name }));
 
   return (
     <div className="space-y-4">
@@ -27,7 +34,7 @@ export default async function ApprovalsPage() {
 
       <ul className="space-y-3">
         {requests.map((req) => (
-          <RequestCard key={req.groupId} req={req} currentUserId={me.id} showUser canModerate />
+          <RequestCard key={req.groupId} req={req} currentUserId={me.id} showUser canModerate typeOptions={typeOptions} substituteOptions={users} />
         ))}
       </ul>
     </div>

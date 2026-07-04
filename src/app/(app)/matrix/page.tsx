@@ -2,7 +2,8 @@ import Link from "next/link";
 import { requireUser, isStaff } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getRequests } from "@/lib/requests";
-import MatrixGrid, { type Cell, type ReqDetail } from "./MatrixGrid";
+import { getAbsenceTypes } from "@/lib/absence-types";
+import MatrixGrid, { type Cell, type LegendItem, type ReqDetail } from "./MatrixGrid";
 
 const PLAN_YEAR = new Date().getFullYear();
 const MONTHS = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
@@ -23,23 +24,38 @@ export default async function MatrixPage({ searchParams }: { searchParams: Promi
   });
 
   const monthPrefix = `${PLAN_YEAR}-${pad(month)}`;
-  const [absences, wishes, holidays] = await Promise.all([
+  const [absences, wishes, holidays, types] = await Promise.all([
     prisma.absence.findMany({ where: { date: { startsWith: monthPrefix } }, select: { userId: true, date: true, type: true, status: true, groupId: true } }),
     prisma.wish.findMany({ where: { date: { startsWith: monthPrefix } }, select: { userId: true, date: true, status: true, groupId: true } }),
     prisma.holiday.findMany({ where: { date: { startsWith: monthPrefix } }, select: { date: true } }),
+    getAbsenceTypes(true),
   ]);
+  const typeByCode = new Map(types.map((t) => [t.code, t]));
+  const WISH = { short: "FW", name: "Freiwunsch", color: "#06b6d4" };
 
   const cells: Record<string, Cell> = {};
   for (const a of absences) {
-    cells[`${a.userId}|${a.date}`] = { letter: a.type === "SPECIAL" ? "SU" : "U", type: a.type as "VACATION" | "SPECIAL", status: a.status, groupId: a.groupId };
+    const t = typeByCode.get(a.type);
+    cells[`${a.userId}|${a.date}`] = {
+      short: t?.short ?? "?",
+      name: t?.name ?? a.type,
+      color: t?.color ?? "#64748b",
+      status: a.status,
+      groupId: a.groupId,
+    };
   }
   for (const w of wishes) {
-    // Urlaub/Sonderurlaub haben Vorrang in der Anzeige
+    // Abwesenheiten haben Vorrang in der Anzeige
     const key = `${w.userId}|${w.date}`;
-    if (!cells[key]) cells[key] = { letter: "FW", type: "WISH", status: w.status, groupId: w.groupId };
+    if (!cells[key]) cells[key] = { short: WISH.short, name: WISH.name, color: WISH.color, status: w.status, groupId: w.groupId };
   }
 
-  // Detail-Daten: Sub-Admins sehen alle Anträge, normale Ärzte nur ihre eigenen.
+  const legend: LegendItem[] = [
+    ...types.filter((t) => t.active).map((t) => ({ short: t.short, name: t.name, color: t.color })),
+    { short: WISH.short, name: WISH.name, color: WISH.color },
+  ];
+
+  // Detail-Daten: Sub-Admins sehen alle Anträge, andere nur ihre eigenen.
   const requests: Record<string, ReqDetail> = {};
   {
     const visibleGroups = new Set(Object.values(cells).map((c) => c.groupId));
@@ -49,11 +65,13 @@ export default async function MatrixPage({ searchParams }: { searchParams: Promi
       requests[r.groupId] = {
         groupId: r.groupId,
         userName: r.userName,
-        kind: r.kind,
+        kindName: r.kindName,
+        substituteName: r.substituteName,
         start: r.start,
         end: r.end,
         days: r.days,
         weekdays: r.weekdays,
+        vacationCounting: r.vacationCounting,
         status: r.status,
         createdAt: r.createdAt,
         modifiedAt: r.modifiedAt,
@@ -90,7 +108,7 @@ export default async function MatrixPage({ searchParams }: { searchParams: Promi
         {groups.length === 0 && <span className="text-xs text-zinc-400">(noch keine Gruppen angelegt)</span>}
       </div>
 
-      <MatrixGrid users={users} days={days} holidays={holidays.map((h) => h.date)} cells={cells} isStaff={staff} requests={requests} currentUserId={me.id} />
+      <MatrixGrid users={users} days={days} holidays={holidays.map((h) => h.date)} cells={cells} legend={legend} isStaff={staff} requests={requests} currentUserId={me.id} />
     </div>
   );
 }

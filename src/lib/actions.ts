@@ -17,6 +17,7 @@ import {
 import { generateSchedule, type SchedulerInput } from "./scheduler";
 import { nrwHolidays } from "./holidays";
 import { addDays, formatDE, weekday } from "./dates";
+import { getAbsenceTypes, getTypeMap } from "./absence-types";
 
 export type ActionResult = { level: "ok" | "warn" | "error"; message: string };
 
@@ -107,10 +108,11 @@ export async function getVacationLimit(userId: string, year: number): Promise<nu
   return settings.vacationDaysPerYear + (carry?.days ?? 0);
 }
 
-// Genehmigte Urlaubs-Werktage (Mo–Fr) im Jahr
+// Genehmigte Urlaubs-Werktage (Mo–Fr) im Jahr – alle Arten, die ins Konto zählen.
 export async function countVacationWeekdays(userId: string, year: number): Promise<number> {
+  const vacationCodes = (await getAbsenceTypes(true)).filter((t) => t.countsAsVacation).map((t) => t.code);
   const rows = await prisma.absence.findMany({
-    where: { userId, type: "VACATION", status: "APPROVED", date: { startsWith: String(year) } },
+    where: { userId, type: { in: vacationCodes }, status: "APPROVED", date: { startsWith: String(year) } },
     select: { date: true },
   });
   return rows.filter((r) => weekday(r.date) !== 0 && weekday(r.date) !== 6).length;
@@ -129,15 +131,16 @@ function eachDate(start: string, end: string): string[] {
   return out;
 }
 
-function rangeLabel(start: string, end: string, kind: string): string {
-  const t = kind === "VACATION" ? "Urlaub" : kind === "SPECIAL" ? "Sonderurlaub" : "Freiwunsch";
+async function rangeLabel(start: string, end: string, kind: string): Promise<string> {
+  const t = kind === "WISH" ? "Freiwunsch" : (await getTypeMap()).get(kind)?.name ?? kind;
   return start === end ? `${formatDE(start)} · ${t}` : `${formatDE(start)}–${formatDE(end)} · ${t}`;
 }
 
 async function checkConcurrency(date: string, exceptUserId: string): Promise<boolean> {
   const settings = await getSettings();
+  const limitCodes = (await getAbsenceTypes(true)).filter((t) => t.countsForLimit).map((t) => t.code);
   const c = await prisma.absence.count({
-    where: { date, type: "VACATION", status: "APPROVED", userId: { not: exceptUserId } },
+    where: { date, type: { in: limitCodes }, status: "APPROVED", userId: { not: exceptUserId } },
   });
   return c < settings.maxConcurrentAbsent;
 }
@@ -147,10 +150,11 @@ async function writeRange(opts: {
   userId: string;
   start: string;
   end: string;
-  kind: "VACATION" | "SPECIAL" | "WISH";
+  kind: string; // "WISH" oder Code einer AbsenceType
   status: "PENDING" | "APPROVED";
   approvedById?: string | null;
   groupId?: string;
+  substituteId?: string | null;
 }): Promise<string> {
   const dates = eachDate(opts.start, opts.end);
   const groupId = opts.groupId ?? crypto.randomUUID();
@@ -161,15 +165,27 @@ async function writeRange(opts: {
     if (opts.kind === "WISH") {
       await prisma.wish.create({ data: { userId: opts.userId, date, status: opts.status, groupId, approvedAt, approvedById: opts.approvedById ?? null } });
     } else {
-      await prisma.absence.create({ data: { userId: opts.userId, date, type: opts.kind, status: opts.status, groupId, approvedAt, approvedById: opts.approvedById ?? null } });
+      await prisma.absence.create({
+        data: {
+          userId: opts.userId,
+          date,
+          type: opts.kind,
+          status: opts.status,
+          groupId,
+          approvedAt,
+          approvedById: opts.approvedById ?? null,
+          substituteId: opts.substituteId ?? null,
+        },
+      });
     }
   }
   return groupId;
 }
 
 // ============================ Eigene Kalendereinträge (Bereich) ============================
-// Trägt einen zusammenhängenden Zeitraum als EINEN Antrag ein (PENDING bis Freigabe).
-export async function setRange(start: string, end: string, kind: "VACATION" | "SPECIAL" | "WISH" | "NONE"): Promise<ActionResult> {
+// Trägt einen zusammenhängenden Zeitraum als EINEN Antrag ein.
+// Arten mit needsApproval=false (z.B. Krankheit) sind sofort wirksam.
+export async function setRange(start: string, end: string, kind: string, substituteId?: string | null): Promise<ActionResult> {
   const user = await requireUser();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) return { level: "error", message: "Ungültiges Datum." };
 
@@ -182,11 +198,40 @@ export async function setRange(start: string, end: string, kind: "VACATION" | "S
     return { level: "ok", message: "Einträge entfernt." };
   }
 
-  const groupId = await writeRange({ userId: user.id, start, end, kind, status: "PENDING" });
-  await prisma.leaveLog.create({ data: { groupId, action: "CREATED", byUserId: user.id, detail: rangeLabel(start, end, kind) } });
+  let needsApproval = true;
+  if (kind !== "WISH") {
+    const type = (await getTypeMap()).get(kind);
+    if (!type || !type.active) return { level: "error", message: "Unbekannte Abwesenheitsart." };
+    needsApproval = type.needsApproval;
+  }
+
+  const status = needsApproval ? "PENDING" : "APPROVED";
+  const groupId = await writeRange({ userId: user.id, start, end, kind, status, substituteId: substituteId ?? null });
+  await prisma.leaveLog.create({ data: { groupId, action: "CREATED", byUserId: user.id, detail: await rangeLabel(start, end, kind) } });
+  if (!needsApproval) {
+    await prisma.leaveLog.create({ data: { groupId, action: "APPROVED", byUserId: user.id, detail: "automatisch (keine Freigabe nötig)" } });
+  }
   revalidateAll();
   const n = eachDate(start, end).length;
-  return { level: "ok", message: `Antrag über ${n} Tag(e) gespeichert – wartet auf Freigabe.` };
+  return {
+    level: "ok",
+    message: needsApproval ? `Antrag über ${n} Tag(e) gespeichert – wartet auf Freigabe.` : `Eintrag über ${n} Tag(e) gespeichert (sofort wirksam).`,
+  };
+}
+
+// Vertretung eines Antrags setzen/ändern (Owner solange ausstehend, Staff immer).
+export async function setSubstitute(groupId: string, substituteId: string | null): Promise<ActionResult> {
+  const actor = await requireUser();
+  const first = await prisma.absence.findFirst({ where: { groupId } });
+  if (!first) return { level: "error", message: "Antrag nicht gefunden." };
+  const staff = isStaff(actor.role);
+  if (!staff && !(first.userId === actor.id && first.status === "PENDING")) {
+    return { level: "error", message: "Keine Berechtigung." };
+  }
+  if (substituteId === first.userId) return { level: "error", message: "Man kann sich nicht selbst vertreten." };
+  await prisma.absence.updateMany({ where: { groupId }, data: { substituteId } });
+  revalidateAll();
+  return { level: "ok", message: substituteId ? "Vertretung gespeichert." : "Vertretung entfernt." };
 }
 
 // ============================ Freigabe / Bearbeitung durch Staff ============================
@@ -196,11 +241,12 @@ export async function approveGroup(groupId: string): Promise<ActionResult> {
   const wishRows = await prisma.wish.findMany({ where: { groupId } });
   if (absRows.length === 0 && wishRows.length === 0) return { level: "error", message: "Antrag nicht gefunden." };
 
-  // FCFS-Prüfung für Urlaubstage
+  // FCFS-Prüfung für Tage, deren Art ins Abwesenheits-Limit zählt
+  const limitCodes = new Set((await getAbsenceTypes(true)).filter((t) => t.countsForLimit).map((t) => t.code));
   for (const a of absRows) {
     if (a.status === "APPROVED") continue;
-    if (a.type === "VACATION" && !(await checkConcurrency(a.date, a.userId))) {
-      return { level: "error", message: `Freigabe nicht möglich: am ${formatDE(a.date)} ist bereits das Maximum im Urlaub.` };
+    if (limitCodes.has(a.type) && !(await checkConcurrency(a.date, a.userId))) {
+      return { level: "error", message: `Freigabe nicht möglich: am ${formatDE(a.date)} ist bereits das Maximum abwesend.` };
     }
   }
   const now = new Date();
@@ -242,9 +288,10 @@ export async function approveAllPending(): Promise<ActionResult> {
 
 // Antrag bearbeiten: behält die ursprüngliche groupId & das CREATED-Protokoll,
 // ergänzt einen MODIFIED-Eintrag. Owner (nur solange ausstehend) oder Staff.
-export async function editGroup(groupId: string, start: string, end: string, kind: "VACATION" | "SPECIAL" | "WISH"): Promise<ActionResult> {
+export async function editGroup(groupId: string, start: string, end: string, kind: string): Promise<ActionResult> {
   const actor = await requireUser();
-  const first = (await prisma.absence.findFirst({ where: { groupId } })) ?? (await prisma.wish.findFirst({ where: { groupId } }));
+  const firstAbs = await prisma.absence.findFirst({ where: { groupId } });
+  const first = firstAbs ?? (await prisma.wish.findFirst({ where: { groupId } }));
   if (!first) return { level: "error", message: "Antrag nicht gefunden." };
 
   const staff = isStaff(actor.role);
@@ -253,18 +300,107 @@ export async function editGroup(groupId: string, start: string, end: string, kin
     return { level: "error", message: "Bearbeiten nicht möglich (nur eigene, noch nicht freigegebene Anträge)." };
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) return { level: "error", message: "Ungültiges Datum." };
+  if (kind !== "WISH" && !(await getTypeMap()).get(kind)) return { level: "error", message: "Unbekannte Abwesenheitsart." };
 
   // Alte Tage des Antrags entfernen, neue mit gleicher groupId anlegen.
   await prisma.absence.deleteMany({ where: { groupId } });
   await prisma.wish.deleteMany({ where: { groupId } });
   // Staff-Bearbeitung gilt als freigegeben, Owner-Bearbeitung muss neu freigegeben werden.
   const status = staff ? "APPROVED" : "PENDING";
-  await writeRange({ userId: first.userId, start, end, kind, status, approvedById: staff ? actor.id : null, groupId });
+  await writeRange({
+    userId: first.userId,
+    start,
+    end,
+    kind,
+    status,
+    approvedById: staff ? actor.id : null,
+    groupId,
+    substituteId: firstAbs?.substituteId ?? null,
+  });
   await prisma.leaveLog.create({
-    data: { groupId, action: "MODIFIED", byUserId: actor.id, detail: rangeLabel(start, end, kind) },
+    data: { groupId, action: "MODIFIED", byUserId: actor.id, detail: await rangeLabel(start, end, kind) },
   });
   revalidateAll();
   return { level: "ok", message: "Antrag geändert (ursprüngliches Eintragsdatum bleibt erhalten)." };
+}
+
+// ============================ Abwesenheitsarten (Staff) ============================
+export async function saveAbsenceType(_prev: unknown, formData: FormData): Promise<ActionResult> {
+  await requireStaff();
+  const id = String(formData.get("id") ?? "");
+  const name = String(formData.get("name") ?? "").trim();
+  const short = String(formData.get("short") ?? "").trim().toUpperCase().slice(0, 3);
+  const color = String(formData.get("color") ?? "#64748b");
+  const countsAsVacation = formData.get("countsAsVacation") === "on";
+  const countsForLimit = formData.get("countsForLimit") === "on";
+  const needsApproval = formData.get("needsApproval") === "on";
+  if (!name || !short) return { level: "error", message: "Name und Kürzel sind Pflicht." };
+
+  if (id) {
+    await prisma.absenceType.update({ where: { id }, data: { name, short, color, countsAsVacation, countsForLimit, needsApproval } });
+    revalidatePath("/admin/absence-types");
+    return { level: "ok", message: `„${name}" gespeichert.` };
+  }
+  const code = name.toUpperCase().replace(/[^A-Z0-9]+/g, "_").slice(0, 24);
+  if (await prisma.absenceType.findUnique({ where: { code } })) return { level: "error", message: "Eine Art mit diesem Namen existiert bereits." };
+  await prisma.absenceType.create({
+    data: { code, name, short, color, countsAsVacation, countsForLimit, needsApproval, sortOrder: 50 },
+  });
+  revalidatePath("/admin/absence-types");
+  return { level: "ok", message: `Abwesenheitsart „${name}" angelegt.` };
+}
+
+export async function toggleAbsenceType(id: string): Promise<ActionResult> {
+  await requireStaff();
+  const t = await prisma.absenceType.findUnique({ where: { id } });
+  if (!t) return { level: "error", message: "Art nicht gefunden." };
+  await prisma.absenceType.update({ where: { id }, data: { active: !t.active } });
+  revalidatePath("/admin/absence-types");
+  return { level: "ok", message: t.active ? `„${t.name}" deaktiviert.` : `„${t.name}" aktiviert.` };
+}
+
+export async function deleteAbsenceType(id: string): Promise<ActionResult> {
+  await requireStaff();
+  const t = await prisma.absenceType.findUnique({ where: { id } });
+  if (!t) return { level: "error", message: "Art nicht gefunden." };
+  if (t.builtin) return { level: "error", message: "Eingebaute Arten können nur deaktiviert werden." };
+  const inUse = await prisma.absence.count({ where: { type: t.code } });
+  if (inUse > 0) return { level: "error", message: `„${t.name}" wird von ${inUse} Eintrag/Einträgen genutzt – bitte nur deaktivieren.` };
+  await prisma.absenceType.delete({ where: { id } });
+  revalidatePath("/admin/absence-types");
+  return { level: "ok", message: `„${t.name}" gelöscht.` };
+}
+
+// ============================ Personalakte ============================
+export async function updatePersonnel(_prev: unknown, formData: FormData): Promise<ActionResult> {
+  await requireStaff();
+  const userId = String(formData.get("userId") ?? "");
+  if (!userId) return { level: "error", message: "Nutzer fehlt." };
+  const s = (k: string) => {
+    const v = String(formData.get(k) ?? "").trim();
+    return v === "" ? null : v;
+  };
+  const weeklyRaw = String(formData.get("weeklyHours") ?? "").trim().replace(",", ".");
+  const weeklyHours = weeklyRaw === "" ? null : Number(weeklyRaw);
+  if (weeklyHours !== null && (!Number.isFinite(weeklyHours) || weeklyHours < 0 || weeklyHours > 80)) {
+    return { level: "error", message: "Wochenstunden bitte als Zahl zwischen 0 und 80 angeben." };
+  }
+  await prisma.user.update({
+    where: { id: userId },
+    data: {
+      position: s("position"),
+      phone: s("phone"),
+      address: s("address"),
+      birthDate: s("birthDate"),
+      hireDate: s("hireDate"),
+      emergency: s("emergency"),
+      staffNotes: s("staffNotes"),
+      weeklyHours,
+    },
+  });
+  revalidatePath("/admin/personnel");
+  revalidatePath("/profile");
+  return { level: "ok", message: "Personalakte gespeichert." };
 }
 
 // ============================ Kommentare (am Antrag) ============================

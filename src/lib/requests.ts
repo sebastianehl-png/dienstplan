@@ -1,5 +1,6 @@
 import { prisma } from "./prisma";
 import { weekday } from "./dates";
+import { getTypeMap } from "./absence-types";
 
 export type CommentItem = { id: string; text: string; authorName: string; authorId: string; createdAt: string };
 export type LogItem = { action: string; at: string; byName: string | null; detail: string | null };
@@ -7,13 +8,19 @@ export type LogItem = { action: string; at: string; byName: string | null; detai
 export type LeaveRequest = {
   groupId: string;
   target: "absence" | "wish";
-  kind: "VACATION" | "SPECIAL" | "WISH";
+  kind: string; // "WISH" oder Code einer AbsenceType
+  kindName: string; // Anzeigename, z.B. "Urlaub"
+  kindShort: string; // Kürzel, z.B. "U"
+  kindColor: string; // Hex-Farbe
   userId: string;
   userName: string;
+  substituteId: string | null;
+  substituteName: string | null;
   start: string;
   end: string;
   days: number;
   weekdays: number;
+  vacationCounting: boolean; // Art zählt ins Urlaubskonto
   status: "PENDING" | "APPROVED" | "REJECTED" | "MIXED";
   createdAt: string; // ursprüngliches Eintragsdatum
   approvedAt: string | null;
@@ -22,6 +29,8 @@ export type LeaveRequest = {
   comments: CommentItem[];
   logs: LogItem[];
 };
+
+const WISH_META = { name: "Freiwunsch", short: "FW", color: "#06b6d4" };
 
 type Filter = { yearPrefix?: string; userId?: string; pendingOnly?: boolean };
 
@@ -43,9 +52,10 @@ export async function getRequests(filter: Filter = {}): Promise<LeaveRequest[]> 
 
   type Acc = {
     target: "absence" | "wish";
-    kind: "VACATION" | "SPECIAL" | "WISH";
+    kind: string;
     userId: string;
     userName: string;
+    substituteId: string | null;
     dates: string[];
     statuses: Set<string>;
     createdAt: Date;
@@ -55,15 +65,16 @@ export async function getRequests(filter: Filter = {}): Promise<LeaveRequest[]> 
   const groups = new Map<string, Acc>();
 
   const ingest = (rows: typeof absences | typeof wishes, target: "absence" | "wish") => {
-    for (const r of rows as (typeof absences[number] & { type?: string })[]) {
+    for (const r of rows as (typeof absences[number] & { type?: string; substituteId?: string | null })[]) {
       const g = groups.get(r.groupId);
-      const kind = target === "wish" ? "WISH" : ((r.type as "VACATION" | "SPECIAL") ?? "VACATION");
+      const kind = target === "wish" ? "WISH" : (r.type ?? "VACATION");
       if (!g) {
         groups.set(r.groupId, {
           target,
           kind,
           userId: r.userId,
           userName: r.user.name,
+          substituteId: r.substituteId ?? null,
           dates: [r.date],
           statuses: new Set([r.status]),
           createdAt: r.createdAt,
@@ -104,10 +115,17 @@ export async function getRequests(filter: Filter = {}): Promise<LeaveRequest[]> 
     commentsByGroup.set(c.groupId, arr);
   }
 
+  const typeMap = await getTypeMap();
+
   const result: LeaveRequest[] = [];
   for (const [groupId, g] of groups) {
     const dates = g.dates.sort();
-    const weekdays = g.kind === "VACATION" ? dates.filter((d) => weekday(d) !== 0 && weekday(d) !== 6).length : dates.length;
+    const meta = g.kind === "WISH" ? WISH_META : (() => {
+      const t = typeMap.get(g.kind);
+      return t ? { name: t.name, short: t.short, color: t.color } : { name: g.kind, short: "?", color: "#64748b" };
+    })();
+    const countsAsVacation = g.kind !== "WISH" && (typeMap.get(g.kind)?.countsAsVacation ?? false);
+    const weekdays = countsAsVacation ? dates.filter((d) => weekday(d) !== 0 && weekday(d) !== 6).length : dates.length;
     const status: LeaveRequest["status"] =
       g.statuses.size > 1 ? "MIXED" : g.statuses.has("APPROVED") ? "APPROVED" : g.statuses.has("REJECTED") ? "REJECTED" : "PENDING";
     const createdAt = (createdByGroup.get(groupId) ?? g.createdAt).toISOString();
@@ -115,12 +133,18 @@ export async function getRequests(filter: Filter = {}): Promise<LeaveRequest[]> 
       groupId,
       target: g.target,
       kind: g.kind,
+      kindName: meta.name,
+      kindShort: meta.short,
+      kindColor: meta.color,
       userId: g.userId,
       userName: g.userName,
+      substituteId: g.substituteId,
+      substituteName: g.substituteId ? nameOf.get(g.substituteId) ?? null : null,
       start: dates[0],
       end: dates[dates.length - 1],
       days: dates.length,
       weekdays,
+      vacationCounting: countsAsVacation,
       status,
       createdAt,
       approvedAt: g.approvedAt ? g.approvedAt.toISOString() : null,

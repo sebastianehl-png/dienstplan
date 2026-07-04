@@ -5,20 +5,25 @@ import { useRouter } from "next/navigation";
 import { setRange, type ActionResult } from "@/lib/actions";
 import { addDays, weekday } from "@/lib/dates";
 
-type Kind = "VACATION" | "SPECIAL" | "WISH";
-type Mode = Kind | "NONE";
-type Entry = { type: Kind; status: string };
+export type CalendarType = { code: string; name: string; short: string; color: string; countsAsVacation: boolean };
+type Entry = { type: string; status: string };
 
-const MODES: { mode: Mode; label: string; cls: string }[] = [
-  { mode: "VACATION", label: "Urlaub", cls: "bg-yellow-400" },
-  { mode: "SPECIAL", label: "Sonderurlaub", cls: "bg-blue-500" },
-  { mode: "WISH", label: "Freiwunsch", cls: "bg-cyan-500" },
-  { mode: "NONE", label: "Entfernen", cls: "bg-zinc-400" },
-];
+const WISH_COLOR = "#06b6d4";
+const REJECTED_COLOR = "#ef4444";
 
 const MONTHS = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
 const WD = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 const pad = (n: number) => String(n).padStart(2, "0");
+
+// Helle Farben (z.B. Gelb) brauchen dunkle Schrift.
+function textOn(color: string): string {
+  const hex = color.replace("#", "");
+  if (hex.length !== 6) return "#fff";
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  return 0.299 * r + 0.587 * g + 0.114 * b > 160 ? "#18181b" : "#ffffff";
+}
 
 function datesInRange(a: string, b: string): string[] {
   let start = a < b ? a : b;
@@ -37,23 +42,35 @@ export default function CalendarEditor({
   initialEntries,
   holidays,
   vacationLimit,
+  types,
+  colleagues,
 }: {
   year: number;
   initialEntries: Record<string, Entry>;
   holidays: Record<string, string>;
   vacationLimit: number;
+  types: CalendarType[];
+  colleagues: { id: string; name: string }[];
 }) {
   const router = useRouter();
   const [entries, setEntries] = useState<Record<string, Entry>>(initialEntries);
-  const [mode, setMode] = useState<Mode>("VACATION");
+  const [mode, setMode] = useState<string>(types[0]?.code ?? "WISH");
+  const [substitute, setSubstitute] = useState<string>("");
   const [anchor, setAnchor] = useState<string | null>(null);
   const [hover, setHover] = useState<string | null>(null);
   const [flash, setFlash] = useState<ActionResult | null>(null);
   const [pending, start] = useTransition();
 
+  const colorOf = useMemo(() => {
+    const m = new Map<string, string>(types.map((t) => [t.code, t.color]));
+    m.set("WISH", WISH_COLOR);
+    return m;
+  }, [types]);
+
+  const vacationCodes = useMemo(() => new Set(types.filter((t) => t.countsAsVacation).map((t) => t.code)), [types]);
   const vacationUsed = useMemo(
-    () => Object.entries(entries).filter(([d, e]) => e.type === "VACATION" && weekday(d) !== 0 && weekday(d) !== 6).length,
-    [entries]
+    () => Object.entries(entries).filter(([d, e]) => vacationCodes.has(e.type) && weekday(d) !== 0 && weekday(d) !== 6).length,
+    [entries, vacationCodes]
   );
 
   const selection = useMemo(() => {
@@ -67,12 +84,10 @@ export default function CalendarEditor({
       setHover(date);
       return;
     }
-    // zweiter Klick: Zeitraum bestätigen
     const a = anchor;
     setAnchor(null);
     const days = datesInRange(a, date);
 
-    // optimistisch
     setEntries((cur) => {
       const next = { ...cur };
       for (const d of days) {
@@ -83,25 +98,31 @@ export default function CalendarEditor({
     });
 
     start(async () => {
-      const res = await setRange(a, date, mode);
+      const res = await setRange(a, date, mode, mode !== "WISH" && mode !== "NONE" ? substitute || null : null);
       setFlash(res);
       router.refresh();
     });
   }
 
+  const modeButtons = [
+    ...types.map((t) => ({ code: t.code, label: t.name, color: t.color })),
+    { code: "WISH", label: "Freiwunsch", color: WISH_COLOR },
+    { code: "NONE", label: "Entfernen", color: "#a1a1aa" },
+  ];
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3 rounded-xl border border-zinc-200 bg-white p-3">
-        <span className="text-sm font-medium text-zinc-700">Modus:</span>
-        {MODES.map((m) => (
+        <span className="text-sm font-medium text-zinc-700">Art:</span>
+        {modeButtons.map((m) => (
           <button
-            key={m.mode}
-            onClick={() => { setMode(m.mode); setAnchor(null); }}
+            key={m.code}
+            onClick={() => { setMode(m.code); setAnchor(null); }}
             className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm ${
-              mode === m.mode ? "border-zinc-900 bg-zinc-900 text-white" : "border-zinc-300 text-zinc-700 hover:bg-zinc-50"
+              mode === m.code ? "border-zinc-900 bg-zinc-900 text-white" : "border-zinc-300 text-zinc-700 hover:bg-zinc-50"
             }`}
           >
-            <span className={`inline-block h-3 w-3 rounded-full ${m.cls}`} />
+            <span className="inline-block h-3 w-3 rounded-full" style={{ backgroundColor: m.color }} />
             {m.label}
           </button>
         ))}
@@ -112,6 +133,21 @@ export default function CalendarEditor({
           </span>
         </span>
       </div>
+
+      {mode !== "WISH" && mode !== "NONE" && (
+        <div className="flex flex-wrap items-center gap-2 text-sm text-zinc-600">
+          <label>Vertretung (optional):</label>
+          <select value={substitute} onChange={(e) => setSubstitute(e.target.value)} className="rounded border border-zinc-300 px-2 py-1 text-sm">
+            <option value="">– keine –</option>
+            {colleagues.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          <span className="text-xs text-zinc-400">wird beim nächsten Eintrag mitgespeichert</span>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-3 text-sm">
         {anchor ? (
@@ -135,17 +171,13 @@ export default function CalendarEditor({
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {MONTHS.map((name, mIdx) => (
-          <Month key={mIdx} year={year} monthIdx={mIdx} name={name} entries={entries} holidays={holidays} selection={selection} onClickDay={clickDay} onHover={setHover} />
+          <Month key={mIdx} year={year} monthIdx={mIdx} name={name} entries={entries} holidays={holidays} selection={selection} colorOf={colorOf} onClickDay={clickDay} onHover={setHover} />
         ))}
       </div>
 
-      <Legend />
+      <Legend types={types} />
     </div>
   );
-}
-
-function colorFor(type: Kind): string {
-  return type === "VACATION" ? "bg-yellow-400" : type === "SPECIAL" ? "bg-blue-500" : "bg-cyan-500";
 }
 
 function Month({
@@ -155,6 +187,7 @@ function Month({
   entries,
   holidays,
   selection,
+  colorOf,
   onClickDay,
   onHover,
 }: {
@@ -164,6 +197,7 @@ function Month({
   entries: Record<string, Entry>;
   holidays: Record<string, string>;
   selection: Set<string>;
+  colorOf: Map<string, string>;
   onClickDay: (date: string) => void;
   onHover: (date: string) => void;
 }) {
@@ -196,15 +230,16 @@ function Month({
           let style: React.CSSProperties | undefined;
           if (entry) {
             if (entry.status === "REJECTED") {
-              cls = "bg-red-500 text-white";
+              style = { backgroundColor: REJECTED_COLOR, color: "#fff" };
+              cls = "";
             } else {
-              const base = colorFor(entry.type);
-              const txt = entry.type === "VACATION" ? "text-zinc-900" : "text-white";
-              if (entry.status === "APPROVED") cls = `${base} ${txt}`;
-              else {
-                cls = `${base} ${txt} opacity-70`;
-                style = { backgroundImage: "repeating-linear-gradient(45deg, rgba(255,255,255,.5) 0 3px, transparent 3px 6px)" };
+              const base = colorOf.get(entry.type) ?? "#64748b";
+              style = { backgroundColor: base, color: textOn(base) };
+              if (entry.status !== "APPROVED") {
+                style.opacity = 0.7;
+                style.backgroundImage = "repeating-linear-gradient(45deg, rgba(255,255,255,.5) 0 3px, transparent 3px 6px)";
               }
+              cls = "";
             }
           } else if (isHoliday) cls = "bg-amber-50 text-amber-700 ring-1 ring-amber-300";
           else if (isWeekend) cls = "bg-zinc-100 text-zinc-400 hover:bg-zinc-200";
@@ -227,26 +262,30 @@ function Month({
   );
 }
 
-function Legend() {
-  const items = [
-    { cls: "bg-yellow-400", label: "Urlaub" },
-    { cls: "bg-blue-500", label: "Sonderurlaub" },
-    { cls: "bg-cyan-500", label: "Freiwunsch" },
-    { cls: "bg-red-500", label: "abgelehnt" },
-    { cls: "bg-amber-50 ring-1 ring-amber-300", label: "Feiertag (NRW)" },
-    { cls: "bg-zinc-100", label: "Wochenende" },
-  ];
+function Legend({ types }: { types: CalendarType[] }) {
   return (
     <div className="flex flex-wrap gap-4 text-xs text-zinc-500">
-      {items.map((i) => (
-        <span key={i.label} className="flex items-center gap-1.5">
-          <span className={`inline-block h-3 w-3 rounded ${i.cls}`} />
-          {i.label}
+      {types.map((t) => (
+        <span key={t.code} className="flex items-center gap-1.5">
+          <span className="inline-block h-3 w-3 rounded" style={{ backgroundColor: t.color }} />
+          {t.name} ({t.short})
         </span>
       ))}
       <span className="flex items-center gap-1.5">
-        <span className="inline-block h-3 w-3 rounded bg-yellow-400 opacity-70" style={{ backgroundImage: "repeating-linear-gradient(45deg, rgba(255,255,255,.5) 0 2px, transparent 2px 4px)" }} />
-        ausstehend
+        <span className="inline-block h-3 w-3 rounded" style={{ backgroundColor: WISH_COLOR }} />
+        Freiwunsch (FW)
+      </span>
+      <span className="flex items-center gap-1.5">
+        <span className="inline-block h-3 w-3 rounded" style={{ backgroundColor: REJECTED_COLOR }} />
+        abgelehnt
+      </span>
+      <span className="flex items-center gap-1.5">
+        <span className="inline-block h-3 w-3 rounded bg-amber-50 ring-1 ring-amber-300" />
+        Feiertag (NRW)
+      </span>
+      <span className="flex items-center gap-1.5">
+        <span className="inline-block h-3 w-3 rounded bg-zinc-100" />
+        Wochenende
       </span>
     </div>
   );

@@ -62,6 +62,18 @@ async function main() {
     create: { id: 1, maxConcurrentAbsent: 5, vacationDaysPerYear: 30, maxWeekendsPerMonth: 2 },
   });
 
+  // Abwesenheitsarten (Timebutler-Stil): eingebaute + Beispiele
+  const typeDefs = [
+    { code: "VACATION", name: "Urlaub", short: "U", color: "#eab308", countsAsVacation: true, countsForLimit: true, needsApproval: true, builtin: true, sortOrder: 1 },
+    { code: "SPECIAL", name: "Sonderurlaub", short: "SU", color: "#3b82f6", countsAsVacation: false, countsForLimit: false, needsApproval: true, builtin: true, sortOrder: 2 },
+    { code: "SICK", name: "Krankheit", short: "K", color: "#f97316", countsAsVacation: false, countsForLimit: false, needsApproval: false, builtin: true, sortOrder: 3 },
+    { code: "TRAINING", name: "Fortbildung", short: "FB", color: "#8b5cf6", countsAsVacation: false, countsForLimit: false, needsApproval: true, builtin: false, sortOrder: 10 },
+    { code: "BUSINESS_TRIP", name: "Dienstreise", short: "DR", color: "#10b981", countsAsVacation: false, countsForLimit: false, needsApproval: true, builtin: false, sortOrder: 11 },
+  ];
+  for (const t of typeDefs) {
+    await prisma.absenceType.upsert({ where: { code: t.code }, update: {}, create: { ...t, active: true } });
+  }
+
   // NRW-Feiertage für aktuelles + nächstes Jahr
   const thisYear = new Date().getUTCFullYear();
   for (const year of [thisYear, thisYear + 1]) {
@@ -128,6 +140,17 @@ async function main() {
   await addLeave("clara.dietrich@klinik.de", `${thisYear}-07-06`, `${thisYear}-07-08`, "VACATION", "PENDING");
   await addLeave("david.engel@klinik.de", `${thisYear}-08-10`, `${thisYear}-08-14`, "SPECIAL", "APPROVED");
   await addLeave("mara.neumann@klinik.de", `${thisYear}-07-13`, `${thisYear}-07-17`, "VACATION", "PENDING");
+
+  // Demo: eine Krankmeldung (sofort wirksam) und Beispiel-Stammdaten
+  await addLeave("greta.huber@klinik.de", `${thisYear}-06-22`, `${thisYear}-06-24`, "SICK", "APPROVED");
+  await prisma.user.update({
+    where: { email: "anna.bauer@klinik.de" },
+    data: { position: "Oberärztin Kardiologie", weeklyHours: 40, hireDate: "2019-04-01", phone: "+49 221 555-1234" },
+  }).catch(() => {});
+  await prisma.user.update({
+    where: { email: "mara.neumann@klinik.de" },
+    data: { position: "Oberärztin Gastroenterologie", weeklyHours: 32, hireDate: "2022-09-15" },
+  }).catch(() => {});
 
   // Demo-Freiwunsch (zeigt das FW-Kürzel in der Urlaubsübersicht)
   const felix = await prisma.user.findUnique({ where: { email: "felix.gross@klinik.de" } });

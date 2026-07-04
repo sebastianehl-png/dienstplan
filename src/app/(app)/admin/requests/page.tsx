@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser, isStaff } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import { getRequests } from "@/lib/requests";
+import { getAbsenceTypes } from "@/lib/absence-types";
 import RequestCard from "@/components/RequestCard";
 
 const PLAN_YEAR = new Date().getFullYear();
@@ -12,9 +14,17 @@ export default async function RequestsPage({ searchParams }: { searchParams: Pro
   if (!isStaff(me.role)) redirect("/dashboard");
 
   const { status } = await searchParams;
-  let requests = await getRequests({ yearPrefix: String(PLAN_YEAR) });
-  if (status === "pending") requests = requests.filter((r) => r.status !== "APPROVED");
+  const [allRequests, types, users] = await Promise.all([
+    getRequests({ yearPrefix: String(PLAN_YEAR) }),
+    getAbsenceTypes(),
+    prisma.user.findMany({ where: { active: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+  ]);
+  const typeOptions = types.map((t) => ({ code: t.code, name: t.name }));
+
+  let requests = allRequests;
+  if (status === "pending") requests = requests.filter((r) => r.status === "PENDING" || r.status === "MIXED");
   if (status === "approved") requests = requests.filter((r) => r.status === "APPROVED");
+  if (status === "rejected") requests = requests.filter((r) => r.status === "REJECTED");
 
   const tab = (key: string, label: string) => (
     <Link
@@ -36,13 +46,14 @@ export default async function RequestsPage({ searchParams }: { searchParams: Pro
         {tab("", "Alle")}
         {tab("pending", "Ausstehend")}
         {tab("approved", "Freigegeben")}
+        {tab("rejected", "Abgelehnt")}
       </div>
 
       {requests.length === 0 && <div className="rounded-xl border border-zinc-200 bg-white p-8 text-center text-zinc-500">Keine Anträge.</div>}
 
       <ul className="space-y-3">
         {requests.map((req) => (
-          <RequestCard key={req.groupId} req={req} currentUserId={me.id} showUser canModerate />
+          <RequestCard key={req.groupId} req={req} currentUserId={me.id} showUser canModerate typeOptions={typeOptions} substituteOptions={users} />
         ))}
       </ul>
     </div>

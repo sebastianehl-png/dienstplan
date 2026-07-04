@@ -12,7 +12,11 @@ export default async function Dashboard() {
 
   const used = await countVacationWeekdays(user.id, PLAN_YEAR);
   const pending = await prisma.absence.count({ where: { userId: user.id, status: "PENDING", date: { startsWith: String(PLAN_YEAR) } } });
-  const special = await prisma.absence.count({ where: { userId: user.id, type: "SPECIAL", date: { startsWith: String(PLAN_YEAR) } } });
+  const { getAbsenceTypes } = await import("@/lib/absence-types");
+  const nonVacationCodes = (await getAbsenceTypes(true)).filter((t) => !t.countsAsVacation).map((t) => t.code);
+  const special = await prisma.absence.count({
+    where: { userId: user.id, type: { in: nonVacationCodes }, date: { startsWith: String(PLAN_YEAR) } },
+  });
   const wishes = await prisma.wish.count({ where: { userId: user.id, date: { startsWith: String(PLAN_YEAR) } } });
   const plan = await prisma.plan.findUnique({ where: { year: PLAN_YEAR } });
 
@@ -29,7 +33,7 @@ export default async function Dashboard() {
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card title="Urlaub freigegeben" value={`${used} / ${vacationLimit}`} hint={used > vacationLimit ? "Kontingent überschritten!" : pending > 0 ? `${pending} Tag(e) ausstehend` : "Werktage Mo–Fr"} warn={used > vacationLimit} />
-        <Card title="Sonderurlaub" value={String(special)} hint="ohne Limit" />
+        <Card title="Weitere Abwesenheiten" value={String(special)} hint="Sonderurlaub, Krankheit …" />
         <Card title="Freiwünsche" value={String(wishes)} hint="bevorzugt berücksichtigt" />
         <Card title="Meine Dienste" value={plan ? String(myDuties) : "–"} hint={plan ? (plan.status === "RELEASED" ? "Plan freigegeben" : "Plan vorläufig") : "noch kein Plan"} />
       </div>

@@ -2,13 +2,9 @@ import type { LeaveRequest } from "@/lib/requests";
 import { formatDE, weekdayName } from "@/lib/dates";
 import CommentBox from "@/app/(app)/entries/CommentBox";
 import { RowActions } from "@/app/(app)/admin/approvals/ApprovalControls";
-import EditRequest from "@/components/EditRequest";
+import EditRequest, { type TypeOption } from "@/components/EditRequest";
+import SubstituteSelect from "@/components/SubstituteSelect";
 
-const KIND: Record<string, { label: string; cls: string }> = {
-  VACATION: { label: "Urlaub", cls: "bg-yellow-100 text-yellow-800" },
-  SPECIAL: { label: "Sonderurlaub", cls: "bg-blue-100 text-blue-700" },
-  WISH: { label: "Freiwunsch", cls: "bg-cyan-100 text-cyan-700" },
-};
 const STATUS: Record<string, { label: string; cls: string }> = {
   APPROVED: { label: "freigegeben", cls: "bg-emerald-100 text-emerald-700" },
   PENDING: { label: "ausstehend", cls: "bg-amber-100 text-amber-700" },
@@ -32,31 +28,49 @@ export default function RequestCard({
   showUser = false,
   canModerate = false,
   canEditOwn = false,
+  typeOptions = [],
+  substituteOptions = [],
 }: {
   req: LeaveRequest;
   currentUserId: string;
   showUser?: boolean;
   canModerate?: boolean;
   canEditOwn?: boolean;
+  typeOptions?: TypeOption[];
+  substituteOptions?: { id: string; name: string }[];
 }) {
-  const k = KIND[req.kind];
   const s = STATUS[req.status];
   const editable = canModerate || (canEditOwn && req.status === "PENDING");
+  const canSetSubstitute = req.target === "absence" && (canModerate || (canEditOwn && req.status === "PENDING"));
 
   return (
     <li className="rounded-xl border border-zinc-200 bg-white p-4">
       <div className="flex flex-wrap items-center gap-3">
         {showUser && <span className="font-medium text-zinc-900">{req.userName}</span>}
         <span className="text-sm text-zinc-700">{rangeText(req)}</span>
-        <span className={`rounded-full px-2 py-0.5 text-xs ${k.cls}`}>{k.label}</span>
+        <span className="rounded-full px-2 py-0.5 text-xs font-medium text-white" style={{ backgroundColor: req.kindColor }}>
+          {req.kindShort} · {req.kindName}
+        </span>
         <span className={`rounded-full px-2 py-0.5 text-xs ${s.cls}`}>{s.label}</span>
-        {req.kind === "VACATION" && <span className="text-xs text-zinc-400">{req.weekdays} Werktag(e)</span>}
+        {req.vacationCounting && <span className="text-xs text-zinc-400">{req.weekdays} Werktag(e)</span>}
         {canModerate && req.status !== "APPROVED" && (
           <div className="ml-auto">
             <RowActions groupId={req.groupId} />
           </div>
         )}
       </div>
+
+      {/* Vertretung */}
+      {req.target === "absence" && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+          <span>Vertretung:</span>
+          {canSetSubstitute && substituteOptions.length > 0 ? (
+            <SubstituteSelect groupId={req.groupId} value={req.substituteId} options={substituteOptions.filter((o) => o.id !== req.userId)} />
+          ) : (
+            <span className="text-zinc-700">{req.substituteName ?? "–"}</span>
+          )}
+        </div>
+      )}
 
       {/* Dokumentation */}
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500">
@@ -88,7 +102,7 @@ export default function RequestCard({
 
       {editable && (
         <div className="mt-2">
-          <EditRequest groupId={req.groupId} start={req.start} end={req.end} kind={req.kind} />
+          <EditRequest groupId={req.groupId} start={req.start} end={req.end} kind={req.kind} typeOptions={typeOptions} />
         </div>
       )}
 

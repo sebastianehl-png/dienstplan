@@ -16,6 +16,8 @@ export default async function TeamPage() {
     where: { date: { startsWith: String(PLAN_YEAR) } },
     select: { date: true, type: true, status: true, user: { select: { name: true } } },
   });
+  const { getTypeMap } = await import("@/lib/absence-types");
+  const typeMap = await getTypeMap();
 
   // date -> Liste der Abwesenden (mit Typ + Status)
   const byDay = new Map<string, { name: string; type: string; status: string }[]>();
@@ -24,11 +26,12 @@ export default async function TeamPage() {
     list.push({ name: a.user.name, type: a.type, status: a.status });
     byDay.set(a.date, list);
   }
-  // Zähler nur für freigegebenen regulären Urlaub (zählt fürs FCFS-Limit)
-  const vacCount = (date: string) => (byDay.get(date) ?? []).filter((e) => e.type === "VACATION" && e.status === "APPROVED").length;
+  // Zähler nur für freigegebene Arten, die ins Limit zählen (FCFS)
+  const vacCount = (date: string) =>
+    (byDay.get(date) ?? []).filter((e) => (typeMap.get(e.type)?.countsForLimit ?? false) && e.status === "APPROVED").length;
   const tooltip = (date: string) =>
     (byDay.get(date) ?? [])
-      .map((e) => `${e.name}${e.type === "SPECIAL" ? " (Sonderurlaub)" : ""}${e.status !== "APPROVED" ? " – ausstehend" : ""}`)
+      .map((e) => `${e.name} (${typeMap.get(e.type)?.name ?? e.type})${e.status !== "APPROVED" ? " – ausstehend" : ""}`)
       .join(", ");
 
   return (
