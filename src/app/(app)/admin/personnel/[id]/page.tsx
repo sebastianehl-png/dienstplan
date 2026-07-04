@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { countVacationWeekdays, getVacationLimit } from "@/lib/actions";
 import { getRequests } from "@/lib/requests";
 import PersonnelForm from "../PersonnelForm";
+import SkillsEditor from "../SkillsEditor";
 
 const PLAN_YEAR = new Date().getFullYear();
 
@@ -14,7 +15,7 @@ export default async function PersonnelDetailPage({ params }: { params: Promise<
   if (!isStaff(me.role)) redirect("/dashboard");
 
   const { id } = await params;
-  const user = await prisma.user.findUnique({ where: { id }, include: { groups: { include: { group: true } } } });
+  const user = await prisma.user.findUnique({ where: { id }, include: { groups: { include: { group: true } }, skills: true } });
   if (!user) notFound();
 
   const [vacUsed, vacLimit, requests] = await Promise.all([
@@ -24,6 +25,7 @@ export default async function PersonnelDetailPage({ params }: { params: Promise<
   ]);
 
   const roleLabel = user.role === "ADMIN" ? "Admin" : user.role === "SUBADMIN" ? "Sub-Admin" : "Mitarbeiter";
+  const jobLabel = user.jobRole === "ASSISTENZARZT" ? "Assistenzarzt/-ärztin" : "Oberarzt/-ärztin";
 
   return (
     <div className="space-y-6">
@@ -31,7 +33,7 @@ export default async function PersonnelDetailPage({ params }: { params: Promise<
         <Link href="/admin/personnel" className="text-sm text-blue-700 hover:underline">← Zurück zur Übersicht</Link>
         <h1 className="mt-1 text-2xl font-semibold text-zinc-900">{user.name}</h1>
         <p className="text-zinc-500">
-          {user.email} · {roleLabel} · Dienstplan-Kat. {user.category}
+          {user.email} · {jobLabel} · {roleLabel} · Dienstplan-Kat. {user.category}
           {user.groups.length > 0 && <> · {user.groups.map((g) => g.group.name).join(", ")}</>}
         </p>
       </div>
@@ -56,6 +58,15 @@ export default async function PersonnelDetailPage({ params }: { params: Promise<
             emergency: user.emergency,
             staffNotes: user.staffNotes,
           }}
+        />
+      </div>
+
+      <div className="rounded-xl border border-zinc-200 bg-white p-5">
+        <h2 className="mb-4 font-medium text-zinc-900">Funktion & Fähigkeiten</h2>
+        <SkillsEditor
+          userId={user.id}
+          jobRole={user.jobRole}
+          skills={user.skills.map((s) => ({ skill: s.skill, validFrom: s.validFrom, validTo: s.validTo }))}
         />
       </div>
 

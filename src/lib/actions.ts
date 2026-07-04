@@ -18,6 +18,9 @@ import { generateSchedule, type SchedulerInput } from "./scheduler";
 import { nrwHolidays } from "./holidays";
 import { addDays, formatDE, weekday } from "./dates";
 import { getAbsenceTypes, getTypeMap } from "./absence-types";
+import { SKILLS } from "./skills";
+import { generateWeekPlan, type WeekReport } from "./weekplan";
+import { ROW_BY_KEY } from "./weekplan-def";
 
 export type ActionResult = { level: "ok" | "warn" | "error"; message: string };
 
@@ -514,6 +517,122 @@ export async function toggleUserActive(userId: string) {
   revalidatePath("/admin/users");
 }
 
+// ============================ Funktion & Fähigkeiten ============================
+export async function updateJobRole(userId: string, jobRole: "OBERARZT" | "ASSISTENZARZT"): Promise<ActionResult> {
+  await requireStaff();
+  if (!["OBERARZT", "ASSISTENZARZT"].includes(jobRole)) return { level: "error", message: "Ungültige Funktion." };
+  await prisma.user.update({ where: { id: userId }, data: { jobRole } });
+  revalidatePath("/admin/personnel");
+  return { level: "ok", message: "Funktion aktualisiert." };
+}
+
+// Ersetzt die Fähigkeiten eines Mitarbeiters komplett (Checkboxen-Formular).
+export async function updateSkills(
+  userId: string,
+  entries: { skill: string; validFrom: string | null; validTo: string | null }[]
+): Promise<ActionResult> {
+  await requireStaff();
+  const known = new Set(SKILLS.map((s) => s.code));
+  for (const e of entries) if (!known.has(e.skill)) return { level: "error", message: `Unbekannte Fähigkeit: ${e.skill}` };
+  await prisma.userSkill.deleteMany({ where: { userId } });
+  if (entries.length > 0) {
+    await prisma.userSkill.createMany({
+      data: entries.map((e) => ({ userId, skill: e.skill, validFrom: e.validFrom, validTo: e.validTo })),
+    });
+  }
+  revalidatePath("/admin/personnel");
+  return { level: "ok", message: "Fähigkeiten gespeichert." };
+}
+
+// ============================ Wochenplan: Standard-OAs & Spezialregeln ============================
+export async function setRowDefault(rowKey: string, userId: string | null): Promise<ActionResult> {
+  await requireStaff();
+  if (!ROW_BY_KEY.has(rowKey)) return { level: "error", message: "Unbekannte Zeile." };
+  await prisma.rowDefault.upsert({ where: { rowKey }, update: { userId }, create: { rowKey, userId } });
+  revalidatePath("/admin/weekplan-settings");
+  return { level: "ok", message: "Standard-Besetzung gespeichert." };
+}
+
+export async function createSpecialRule(_prev: unknown, formData: FormData): Promise<ActionResult> {
+  await requireStaff();
+  const userId = String(formData.get("userId") ?? "");
+  const rowKeyRaw = String(formData.get("rowKey") ?? "");
+  const weekday_ = Number(formData.get("weekday"));
+  const interval = String(formData.get("interval") ?? "EVERY");
+  const refDate = String(formData.get("refDate") ?? "").trim() || null;
+  const note = String(formData.get("note") ?? "").trim() || null;
+  if (!userId || !Number.isInteger(weekday_) || weekday_ < 0 || weekday_ > 4) {
+    return { level: "error", message: "Bitte Person und Wochentag angeben." };
+  }
+  if (interval === "BIWEEKLY" && !refDate) {
+    return { level: "error", message: "Für „jede 2. Woche“ bitte ein Referenzdatum angeben (ein betroffener Tag)." };
+  }
+  await prisma.specialRule.create({
+    data: { userId, rowKey: rowKeyRaw || null, weekday: weekday_, interval: interval === "BIWEEKLY" ? "BIWEEKLY" : "EVERY", refDate, note },
+  });
+  revalidatePath("/admin/weekplan-settings");
+  return { level: "ok", message: "Regel angelegt." };
+}
+
+export async function deleteSpecialRule(id: string): Promise<ActionResult> {
+  await requireStaff();
+  await prisma.specialRule.delete({ where: { id } });
+  revalidatePath("/admin/weekplan-settings");
+  return { level: "ok", message: "Regel gelöscht." };
+}
+
+// ============================ Wochenplan erzeugen/bearbeiten ============================
+export async function generateWeek(weekStart: string): Promise<ActionResult & { report?: WeekReport }> {
+  await requireStaff();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(weekStart) || weekday(weekStart) !== 1) {
+    return { level: "error", message: "Bitte einen Montag als Wochenstart wählen." };
+  }
+  const { cells, report } = await generateWeekPlan(weekStart);
+  await prisma.weekPlan.deleteMany({ where: { weekStart } });
+  const plan = await prisma.weekPlan.create({ data: { weekStart, status: "DRAFT" } });
+  await prisma.weekCell.createMany({
+    data: cells.map((c) => ({ planId: plan.id, rowKey: c.rowKey, day: c.day, userId: c.userId, text: c.text })),
+  });
+  revalidatePath("/admin/weekplan");
+  revalidatePath("/weekplan");
+  const gaps = report.gaps.length;
+  return {
+    level: gaps > 0 ? "warn" : "ok",
+    message: gaps > 0 ? `Entwurf erstellt – ${gaps} unbesetzte Zelle(n).` : "Entwurf erstellt – alle Zellen besetzt.",
+    report,
+  };
+}
+
+export async function updateWeekCell(weekStart: string, rowKey: string, day: number, userId: string | null, text: string | null): Promise<ActionResult> {
+  await requireStaff();
+  const plan = await prisma.weekPlan.findUnique({ where: { weekStart } });
+  if (!plan) return { level: "error", message: "Kein Wochenplan vorhanden." };
+  await prisma.weekCell.upsert({
+    where: { planId_rowKey_day: { planId: plan.id, rowKey, day } },
+    update: { userId, text },
+    create: { planId: plan.id, rowKey, day, userId, text },
+  });
+  revalidatePath("/admin/weekplan");
+  revalidatePath("/weekplan");
+  return { level: "ok", message: "Zelle gespeichert." };
+}
+
+export async function publishWeek(weekStart: string): Promise<ActionResult> {
+  await requireStaff();
+  await prisma.weekPlan.update({ where: { weekStart }, data: { status: "PUBLISHED", publishedAt: new Date() } });
+  revalidatePath("/admin/weekplan");
+  revalidatePath("/weekplan");
+  return { level: "ok", message: "Wochenplan veröffentlicht – für alle sichtbar." };
+}
+
+export async function deleteWeek(weekStart: string): Promise<ActionResult> {
+  await requireStaff();
+  await prisma.weekPlan.deleteMany({ where: { weekStart } });
+  revalidatePath("/admin/weekplan");
+  revalidatePath("/weekplan");
+  return { level: "ok", message: "Wochenplan verworfen." };
+}
+
 // ============================ Einstellungen (nur Admin) ============================
 export async function updateSettings(_prev: unknown, formData: FormData): Promise<ActionResult> {
   await requireAdmin();
@@ -533,7 +652,11 @@ export async function updateSettings(_prev: unknown, formData: FormData): Promis
 export async function generatePlan(year: number): Promise<ActionResult> {
   await requireStaff();
   const settings = await getSettings();
-  const users = await prisma.user.findMany({ where: { active: true }, select: { id: true, name: true, category: true } });
+  // Nur Oberärzte werden im Rufdienst-Jahresplan eingeteilt.
+  const users = await prisma.user.findMany({
+    where: { active: true, jobRole: "OBERARZT" },
+    select: { id: true, name: true, category: true },
+  });
 
   let holidays = await prisma.holiday.findMany({ where: { year } });
   if (holidays.length === 0) {

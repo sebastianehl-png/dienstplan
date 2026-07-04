@@ -175,6 +175,88 @@ async function main() {
     await prisma.wish.update({ where: { id: w.id }, data: { groupId: w.id } });
   }
 
+  // ---- Wochenplan-Demo: Assistenzärzte, Fähigkeiten, Standard-OA, Spezialregel ----
+  const assistants = [
+    { name: "Sara Albrecht", pool: true },
+    { name: "Tim Berger", pool: false },
+    { name: "Lena Conrad", pool: true },
+  ];
+  for (const a of assistants) {
+    const email = `${slug(a.name)}@klinik.de`;
+    const u = await prisma.user.upsert({
+      where: { email },
+      update: { jobRole: "ASSISTENZARZT" },
+      create: { email, passwordHash: pw, name: a.name, category: 2, jobRole: "ASSISTENZARZT" },
+    });
+    await prisma.userSkill.deleteMany({ where: { userId: u.id } });
+    await prisma.userSkill.createMany({
+      data: [
+        { userId: u.id, skill: "VISITE", validFrom: `${thisYear - 1}-10-01` },
+        { userId: u.id, skill: "RUFDIENST", validFrom: `${thisYear}-03-01` },
+        ...(a.pool ? [{ userId: u.id, skill: "POOL_IMC_CPU_ITS", validFrom: `${thisYear}-01-01`, validTo: `${thisYear}-12-31` }] : []),
+      ],
+    });
+  }
+
+  // OA-Fähigkeiten deterministisch verteilen, damit der Generator alle Zeilen füllen kann
+  const oas = await prisma.user.findMany({ where: { jobRole: "OBERARZT", active: true }, orderBy: { name: "asc" } });
+  const give: Record<string, (i: number, cat: number) => boolean> = {
+    HK: (_i, cat) => cat === 1,
+    HK_SENIOR: (i, cat) => cat === 1 && i % 3 === 0,
+    RUF_VG: () => true,
+    RUF_HG: (_i, cat) => cat === 1,
+    FRUEH: () => true,
+    TAVI: (i, cat) => cat === 1 && i % 4 === 0,
+    AV_KLAPPEN: (i, cat) => cat === 1 && i % 4 === 1,
+    BRONCHO: (i) => i % 5 === 2,
+    PNEUMO_AMB: (i) => i % 5 === 2,
+    KONSILE: (i) => i % 2 === 0,
+    ITS_KONSIL: (i) => i % 4 === 1,
+    NORMALSTATION: () => true,
+    IMC: (i) => i % 3 === 1,
+    ITS: (i) => i % 4 === 2,
+    CPU: (i) => i % 3 === 2,
+    KARDIO_AMB: (i) => i % 2 === 1,
+    ECHO: (i) => i % 2 === 0,
+    VIDEO_VINZENZ: (i) => i % 3 === 0,
+    HERZKONFERENZ: (i) => i % 3 === 1,
+  };
+  for (let i = 0; i < oas.length; i++) {
+    const u = oas[i];
+    await prisma.userSkill.deleteMany({ where: { userId: u.id } });
+    const data = Object.entries(give)
+      .filter(([, fn]) => fn(i, u.category))
+      .map(([skill]) => ({ userId: u.id, skill }));
+    if (data.length > 0) await prisma.userSkill.createMany({ data });
+  }
+
+  // Standard-OA: David Engel ist immer ITS (wie "Heyne → ITS")
+  const engel = await prisma.user.findUnique({ where: { email: "david.engel@klinik.de" } });
+  if (engel) {
+    await prisma.userSkill.upsert({
+      where: { userId_skill: { userId: engel.id, skill: "ITS" } },
+      update: {},
+      create: { userId: engel.id, skill: "ITS" },
+    });
+    await prisma.rowDefault.upsert({ where: { rowKey: "ITS" }, update: { userId: engel.id }, create: { rowKey: "ITS", userId: engel.id } });
+  }
+
+  // Spezialregel: Clara Dietrich kann jeden 2. Mittwoch keine Konsile machen (wie "Körber")
+  const clara = await prisma.user.findUnique({ where: { email: "clara.dietrich@klinik.de" } });
+  if (clara) {
+    const exists = await prisma.specialRule.findFirst({ where: { userId: clara.id, rowKey: "KONSILE" } });
+    if (!exists) {
+      await prisma.specialRule.create({
+        data: { userId: clara.id, rowKey: "KONSILE", weekday: 2, interval: "BIWEEKLY", refDate: `${thisYear}-01-07`, note: "Beispielregel" },
+      });
+    }
+    await prisma.userSkill.upsert({
+      where: { userId_skill: { userId: clara.id, skill: "KONSILE" } },
+      update: {},
+      create: { userId: clara.id, skill: "KONSILE" },
+    });
+  }
+
   const count = await prisma.user.count();
   console.log(`Seed fertig: ${count} Nutzer, Feiertage ${thisYear}/${thisYear + 1}.`);
   console.log(`Login Admin:     admin@klinik.de / ${seedPassword}`);

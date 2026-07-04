@@ -16,12 +16,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     { href: "/entries", label: "Meine Einträge" },
     { href: "/matrix", label: "Abwesenheiten" },
     { href: "/plan", label: "Dienstplan" },
+    { href: "/weekplan", label: "Wochenplan" },
     { href: "/profile", label: "Profil" },
   ];
   const staffNav = [
     { href: "/admin/approvals", label: "Freigaben" },
     { href: "/admin/requests", label: "Anträge" },
     { href: "/admin/personnel", label: "Personal" },
+    { href: "/admin/weekplan", label: "Wochenplan erstellen" },
     { href: "/admin/plan", label: "Plan erstellen" },
     { href: "/admin/users", label: "Nutzer" },
     { href: "/admin/groups", label: "Gruppen" },

@@ -18,6 +18,7 @@ model User {
   name         String
   category     Int // Dienstplan-Kategorie: 1 = Vordergrund + HK, 2 = nur Vordergrund
   role         String   @default("DOCTOR") // DOCTOR (= Mitarbeiter) | SUBADMIN | ADMIN
+  jobRole      String   @default("OBERARZT") // OBERARZT | ASSISTENZARZT (änderbar)
   active       Boolean  @default(true)
   createdAt    DateTime @default(now())
 
@@ -38,6 +39,64 @@ model User {
   groups      UserGroup[]
   carryovers  Carryover[]
   resetTokens PasswordResetToken[]
+  skills      UserSkill[]
+}
+
+// Fähigkeit eines Mitarbeiters, optional zeitlich begrenzt.
+// skill = Code aus dem festen Katalog in src/lib/skills.ts
+model UserSkill {
+  id        String  @id @default(cuid())
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  skill     String
+  validFrom String? // YYYY-MM-DD (z.B. "visitendienstfähig ab")
+  validTo   String? // YYYY-MM-DD (z.B. Pool-Ende)
+
+  @@unique([userId, skill])
+  @@index([skill])
+}
+
+// ==================== Oberarzt-Wochenplan ====================
+
+model WeekPlan {
+  id          String    @id @default(cuid())
+  weekStart   String    @unique // Montag der Woche, YYYY-MM-DD
+  status      String    @default("DRAFT") // DRAFT | PUBLISHED
+  createdAt   DateTime  @default(now())
+  publishedAt DateTime?
+
+  cells WeekCell[]
+}
+
+model WeekCell {
+  id         String   @id @default(cuid())
+  plan       WeekPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  planId     String
+  rowKey     String // Zeile, z.B. HK1, KONSILE (Katalog in src/lib/weekplan-def.ts)
+  day        Int // 0 = Montag … 4 = Freitag
+  userId     String? // eingeteilte Person
+  text       String? // manueller Freitext (überschreibt Anzeige)
+
+  @@unique([planId, rowKey, day])
+}
+
+// Standard-Besetzung je Zeile (z.B. Heyne → ITS); wird nur bei Abwesenheit ersetzt.
+model RowDefault {
+  rowKey String  @id
+  userId String?
+}
+
+// Spezielle Regeln, z.B. "Körber kann jeden 2. Mittwoch keine Konsile machen".
+model SpecialRule {
+  id        String  @id @default(cuid())
+  userId    String
+  rowKey    String? // null = gilt für alle Zeilen
+  weekday   Int // 0 = Montag … 4 = Freitag
+  interval  String  @default("EVERY") // EVERY | BIWEEKLY (jede 2. Woche, Anker = refDate)
+  refDate   String? // YYYY-MM-DD eines betroffenen Tages (Anker für BIWEEKLY)
+  validFrom String?
+  validTo   String?
+  note      String?
 }
 
 // Frei definierbare Abwesenheitsarten (Timebutler-Stil).
