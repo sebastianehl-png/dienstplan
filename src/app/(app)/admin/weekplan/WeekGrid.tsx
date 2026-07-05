@@ -22,6 +22,7 @@ export default function WeekGrid({ data }: { data: GridData }) {
   const router = useRouter();
   const [flash, setFlash] = useState<ActionResult | null>(null);
   const [report, setReport] = useState<WeekReport | null>(null);
+  const [textMode, setTextMode] = useState<Set<string>>(new Set()); // Zellen im Freitext-Modus
   const [pending, start] = useTransition();
 
   function run(fn: () => Promise<ActionResult & { report?: WeekReport }>) {
@@ -34,6 +35,11 @@ export default function WeekGrid({ data }: { data: GridData }) {
   }
 
   function setCell(rowKey: string, day: number, value: string) {
+    if (value === "__TEXT__") {
+      // In den Freitext-Modus wechseln (noch nichts speichern)
+      setTextMode((cur) => new Set(cur).add(`${rowKey}|${day}`));
+      return;
+    }
     const userId = value === "" ? null : value;
     start(async () => {
       await updateWeekCell(data.weekStart, rowKey, day, userId, null);
@@ -41,8 +47,17 @@ export default function WeekGrid({ data }: { data: GridData }) {
     });
   }
   function setCellText(rowKey: string, day: number, text: string) {
+    const clean = text.trim();
+    if (!clean) {
+      // Leerer Freitext: zurück zum Dropdown
+      setTextMode((cur) => {
+        const next = new Set(cur);
+        next.delete(`${rowKey}|${day}`);
+        return next;
+      });
+    }
     start(async () => {
-      await updateWeekCell(data.weekStart, rowKey, day, null, text.trim() || null);
+      await updateWeekCell(data.weekStart, rowKey, day, null, clean || null);
       router.refresh();
     });
   }
@@ -137,6 +152,22 @@ export default function WeekGrid({ data }: { data: GridData }) {
                     }
                     const options = data.eligible[key] ?? [];
                     const invalid = cell.userId != null && !options.includes(cell.userId);
+                    const inTextMode = textMode.has(key) || cell.text != null;
+                    if (inTextMode) {
+                      return (
+                        <td key={day} className="border-t border-l border-zinc-100 bg-amber-50/40 px-1 py-1">
+                          <input
+                            autoFocus={textMode.has(key) && cell.text == null}
+                            defaultValue={cell.text ?? ""}
+                            onBlur={(e) => e.target.value.trim() !== (cell.text ?? "") && setCellText(row.key, day, e.target.value)}
+                            onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+                            placeholder="Freitext… (leer = zurück zur Auswahl)"
+                            title="Manueller Eintrag (Freitext)"
+                            className="w-full rounded border border-transparent px-1 py-0.5 text-xs hover:border-zinc-300 focus:border-blue-500 focus:outline-none"
+                          />
+                        </td>
+                      );
+                    }
                     return (
                       <td key={day} className={`border-t border-l border-zinc-100 px-1 py-1 ${invalid ? "bg-red-50" : ""}`}>
                         <select
@@ -152,6 +183,7 @@ export default function WeekGrid({ data }: { data: GridData }) {
                               {lastName(data.users[id] ?? id)}
                             </option>
                           ))}
+                          <option value="__TEXT__">✎ Freitext…</option>
                         </select>
                       </td>
                     );

@@ -25,7 +25,8 @@ export default async function PersonnelDetailPage({ params }: { params: Promise<
   ]);
 
   const roleLabel = user.role === "ADMIN" ? "Admin" : user.role === "SUBADMIN" ? "Sub-Admin" : "Mitarbeiter";
-  const jobLabel = user.jobRole === "ASSISTENZARZT" ? "Assistenzarzt/-ärztin" : "Oberarzt/-ärztin";
+  const jobLabel =
+    user.jobRole === "ASSISTENZARZT" ? "Assistenzarzt/-ärztin" : user.jobRole === "VERWALTUNG" ? "Verwaltung" : "Oberarzt/-ärztin";
 
   return (
     <div className="space-y-6">

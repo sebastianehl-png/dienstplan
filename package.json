@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "eslint",
     "seed": "tsx prisma/seed.ts",
+    "seed:real": "tsx prisma/seed-real.ts",
     "db:deploy": "prisma migrate deploy",
     "postinstall": "prisma generate"
   },

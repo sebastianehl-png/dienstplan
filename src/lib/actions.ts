@@ -518,9 +518,9 @@ export async function toggleUserActive(userId: string) {
 }
 
 // ============================ Funktion & Fähigkeiten ============================
-export async function updateJobRole(userId: string, jobRole: "OBERARZT" | "ASSISTENZARZT"): Promise<ActionResult> {
+export async function updateJobRole(userId: string, jobRole: "OBERARZT" | "ASSISTENZARZT" | "VERWALTUNG"): Promise<ActionResult> {
   await requireStaff();
-  if (!["OBERARZT", "ASSISTENZARZT"].includes(jobRole)) return { level: "error", message: "Ungültige Funktion." };
+  if (!["OBERARZT", "ASSISTENZARZT", "VERWALTUNG"].includes(jobRole)) return { level: "error", message: "Ungültige Funktion." };
   await prisma.user.update({ where: { id: userId }, data: { jobRole } });
   revalidatePath("/admin/personnel");
   return { level: "ok", message: "Funktion aktualisiert." };

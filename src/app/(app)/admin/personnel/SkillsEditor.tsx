@@ -44,7 +44,7 @@ export default function SkillsEditor({
   function changeRole(next: string) {
     setRole(next);
     start(async () => {
-      await updateJobRole(userId, next as "OBERARZT" | "ASSISTENZARZT");
+      await updateJobRole(userId, next as "OBERARZT" | "ASSISTENZARZT" | "VERWALTUNG");
       router.refresh();
     });
   }
@@ -67,6 +67,7 @@ export default function SkillsEditor({
         <select value={role} disabled={pending} onChange={(e) => changeRole(e.target.value)} className="rounded-lg border border-zinc-300 px-3 py-2 text-sm">
           <option value="OBERARZT">Oberarzt/-ärztin</option>
           <option value="ASSISTENZARZT">Assistenzarzt/-ärztin</option>
+          <option value="VERWALTUNG">Verwaltung (keine Dienste)</option>
         </select>
       </div>
 
