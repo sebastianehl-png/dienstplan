@@ -11,6 +11,7 @@ import { addDays, formatDE } from "./dates";
 import { skillValidOn } from "./skills";
 import { WEEK_ROWS } from "./weekplan-def";
 import { getTypeMap } from "./absence-types";
+import { blockedByAnyRule } from "./rules";
 
 export type GeneratedCell = { rowKey: string; day: number; slot: number; userId: string | null; text: string | null };
 export type WeekReport = {
@@ -20,25 +21,6 @@ export type WeekReport = {
 };
 
 export type WeekGenResult = { cells: GeneratedCell[]; report: WeekReport };
-
-// Gilt eine Spezialregel an diesem Datum (date = YYYY-MM-DD, day = 0..4)?
-function ruleBlocks(
-  rule: { rowKey: string | null; weekday: number; interval: string; refDate: string | null; validFrom: string | null; validTo: string | null },
-  rowKey: string,
-  day: number,
-  date: string
-): boolean {
-  if (rule.rowKey && rule.rowKey !== rowKey) return false;
-  if (rule.weekday !== day) return false;
-  if (rule.validFrom && date < rule.validFrom) return false;
-  if (rule.validTo && date > rule.validTo) return false;
-  if (rule.interval === "BIWEEKLY" && rule.refDate) {
-    const ms = Date.parse(date + "T00:00:00Z") - Date.parse(rule.refDate + "T00:00:00Z");
-    const weeks = Math.round(ms / (7 * 24 * 3600 * 1000));
-    return ((weeks % 2) + 2) % 2 === 0;
-  }
-  return true;
-}
 
 export async function generateWeekPlan(weekStart: string): Promise<WeekGenResult> {
   const dates = [0, 1, 2, 3, 4].map((i) => addDays(weekStart, i));
@@ -106,8 +88,7 @@ export async function generateWeekPlan(weekStart: string): Promise<WeekGenResult
   const bump = (m: Map<string, number>, k: string) => m.set(k, (m.get(k) ?? 0) + 1);
 
   const isAbsent = (userId: string, day: number) => absentOn.get(userId)?.has(day) ?? false;
-  const isBlocked = (userId: string, rowKey: string, day: number) =>
-    rules.some((r) => r.userId === userId && ruleBlocks(r, rowKey, day, dates[day]));
+  const isBlocked = (userId: string, rowKey: string, day: number) => blockedByAnyRule(rules, userId, rowKey, day, dates[day]);
   const hasSkill = (u: (typeof users)[number], skill: string, day: number) =>
     u.skills.some((s) => s.skill === skill && skillValidOn(s, dates[day]));
 

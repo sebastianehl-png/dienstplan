@@ -565,12 +565,17 @@ export async function createSpecialRule(_prev: unknown, formData: FormData): Pro
   await requireStaff();
   const userId = String(formData.get("userId") ?? "");
   const rowKeyRaw = String(formData.get("rowKey") ?? "");
-  const weekday_ = Number(formData.get("weekday"));
+  const weekdayRaw = String(formData.get("weekday") ?? "");
+  const weekday_ = weekdayRaw === "" ? null : Number(weekdayRaw); // "" = alle Tage
   const interval = String(formData.get("interval") ?? "EVERY");
   const refDate = String(formData.get("refDate") ?? "").trim() || null;
   const note = String(formData.get("note") ?? "").trim() || null;
-  if (!userId || !Number.isInteger(weekday_) || weekday_ < 0 || weekday_ > 4) {
-    return { level: "error", message: "Bitte Person und Wochentag angeben." };
+  if (!userId) return { level: "error", message: "Bitte eine Person angeben." };
+  if (weekday_ !== null && (!Number.isInteger(weekday_) || weekday_ < 0 || weekday_ > 4)) {
+    return { level: "error", message: "Ungültiger Wochentag." };
+  }
+  if (weekday_ === null && !rowKeyRaw) {
+    return { level: "error", message: "„Alle Tage“ + „alle Zeilen“ würde die Person komplett sperren – bitte eine Zeile wählen." };
   }
   if (interval === "BIWEEKLY" && !refDate) {
     return { level: "error", message: "Für „jede 2. Woche“ bitte ein Referenzdatum angeben (ein betroffener Tag)." };

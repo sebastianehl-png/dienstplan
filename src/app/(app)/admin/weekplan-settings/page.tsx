@@ -60,7 +60,8 @@ export default async function WeekplanSettingsPage() {
       <div className="rounded-xl border border-zinc-200 bg-white p-5">
         <h2 className="mb-1 font-medium text-zinc-900">Spezialregeln</h2>
         <p className="mb-4 text-sm text-zinc-500">
-          Sperren einzelne Personen an bestimmten Wochentagen für eine Zeile (oder alle), z.B. „jeden 2. Mittwoch keine Konsile".
+          Sperren einzelne Personen für eine Zeile – an bestimmten Wochentagen (z.B. „jeden 2. Mittwoch keine Konsile") oder mit
+          „alle Tage" dauerhaft (z.B. „Halbach nie HK 1 Weyertal").
         </p>
         <RuleForm users={users.map((u) => ({ id: u.id, name: u.name }))} rows={fillableRows.map((r) => ({ key: r.key, label: r.label }))} />
 
@@ -70,7 +71,11 @@ export default async function WeekplanSettingsPage() {
               <li key={r.id} className="flex flex-wrap items-center gap-2 rounded-lg bg-zinc-50 px-3 py-2 text-sm">
                 <span className="font-medium text-zinc-900">{nameOf.get(r.userId) ?? "?"}</span>
                 <span className="text-zinc-600">
-                  {r.interval === "BIWEEKLY" ? "jeden 2." : "jeden"} {DAY_NAMES[r.weekday]}
+                  {r.weekday == null
+                    ? r.interval === "BIWEEKLY"
+                      ? "jede 2. Woche komplett"
+                      : "immer"
+                    : `${r.interval === "BIWEEKLY" ? "jeden 2." : "jeden"} ${DAY_NAMES[r.weekday]}`}
                   {r.interval === "BIWEEKLY" && r.refDate ? ` (ab ${formatDE(r.refDate)})` : ""} gesperrt für{" "}
                   {r.rowKey ? WEEK_ROWS.find((w) => w.key === r.rowKey)?.label ?? r.rowKey : "alle Zeilen"}
                 </span>

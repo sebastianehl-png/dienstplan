@@ -63,6 +63,7 @@ export function RuleForm({ users, rows }: { users: { id: string; name: string }[
       </Field>
       <Field label="Wochentag">
         <select name="weekday" className="rounded border border-zinc-300 px-2 py-2 text-sm">
+          <option value="">– alle Tage (nie) –</option>
           {DAY_NAMES.map((d, i) => (
             <option key={i} value={i}>{d}</option>
           ))}

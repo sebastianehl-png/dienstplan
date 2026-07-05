@@ -90,12 +90,13 @@ model RowDefault {
   @@id([rowKey, slot])
 }
 
-// Spezielle Regeln, z.B. "Körber kann jeden 2. Mittwoch keine Konsile machen".
+// Spezielle Regeln, z.B. "Körber kann jeden 2. Mittwoch keine Konsile machen"
+// oder "Halbach nie HK 1 Weyertal" (weekday = null → alle Tage).
 model SpecialRule {
   id        String  @id @default(cuid())
   userId    String
   rowKey    String? // null = gilt für alle Zeilen
-  weekday   Int // 0 = Montag … 4 = Freitag
+  weekday   Int? // 0 = Montag … 4 = Freitag, null = alle Tage
   interval  String  @default("EVERY") // EVERY | BIWEEKLY (jede 2. Woche, Anker = refDate)
   refDate   String? // YYYY-MM-DD eines betroffenen Tages (Anker für BIWEEKLY)
   validFrom String?

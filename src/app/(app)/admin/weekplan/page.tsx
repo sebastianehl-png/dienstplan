@@ -6,6 +6,7 @@ import { addDays, formatDE, weekday } from "@/lib/dates";
 import { skillValidOn } from "@/lib/skills";
 import { WEEK_ROWS } from "@/lib/weekplan-def";
 import { weekLabel } from "@/lib/weekplan";
+import { blockedByAnyRule } from "@/lib/rules";
 import WeekGrid, { type GridData } from "./WeekGrid";
 
 // Nächster Montag (bzw. heutiger, wenn Montag)
@@ -38,19 +39,7 @@ export default async function WeekplanAdminPage({ searchParams }: { searchParams
   const absentOn = new Set(absences.map((a) => `${a.userId}|${dates.indexOf(a.date)}`));
 
   const ruleBlocks = (userId: string, rowKey: string, day: number): boolean =>
-    rules.some((r) => {
-      if (r.userId !== userId) return false;
-      if (r.rowKey && r.rowKey !== rowKey) return false;
-      if (r.weekday !== day) return false;
-      const date = dates[day];
-      if (r.validFrom && date < r.validFrom) return false;
-      if (r.validTo && date > r.validTo) return false;
-      if (r.interval === "BIWEEKLY" && r.refDate) {
-        const weeks = Math.round((Date.parse(date + "T00:00:00Z") - Date.parse(r.refDate + "T00:00:00Z")) / (7 * 24 * 3600 * 1000));
-        return ((weeks % 2) + 2) % 2 === 0;
-      }
-      return true;
-    });
+    blockedByAnyRule(rules, userId, rowKey, day, dates[day]);
 
   const eligible: Record<string, string[]> = {};
   for (const row of WEEK_ROWS) {
