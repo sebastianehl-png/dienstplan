@@ -13,6 +13,8 @@ export type RowDef = {
   // Automatisch aus Abwesenheiten der App
   autoAbsences?: boolean;
   grayDays: number[]; // 0=Mo … 4=Fr — graue (nicht zu füllende) Zellen
+  // Bis zu N Personen pro Zelle (Standard 1). Nur Platz 1 wird als Lücke gemeldet.
+  slots?: number;
 };
 
 export const WEEK_ROWS: RowDef[] = [
@@ -22,13 +24,13 @@ export const WEEK_ROWS: RowDef[] = [
   { key: "RUF", label: "Rufbereitschaft", skill: "RUF_VG", fromYearPlan: true, grayDays: [] },
   { key: "FRUEH", label: "Frühbesprechung", skill: "FRUEH", short: true, grayDays: [2] },
   { key: "TAVI", label: "TAVI", skill: "TAVI", grayDays: [] },
-  { key: "AV_KLAPPEN", label: "AV-Klappen", skill: "AV_KLAPPEN", grayDays: [0, 2] },
+  { key: "AV_KLAPPEN", label: "AV-Klappen", skill: "AV_KLAPPEN", grayDays: [0, 2], slots: 2 },
   { key: "BRONCHO", label: "Bronchoskopie", skill: "BRONCHO", grayDays: [] },
   { key: "PNEUMO_AMB", label: "Pneumo. Ambulanz", skill: "PNEUMO_AMB", grayDays: [] },
   { key: "KONSILE", label: "Konsile", skill: "KONSILE", grayDays: [] },
   { key: "ITS_KONSIL", label: "ITS-Konsil", skill: "ITS_KONSIL", grayDays: [] },
-  { key: "NORMALSTATION", label: "Normalstation", skill: "NORMALSTATION", grayDays: [] },
-  { key: "IMC", label: "IMC", skill: "IMC", grayDays: [] },
+  { key: "NORMALSTATION", label: "Normalstation", skill: "NORMALSTATION", grayDays: [], slots: 4 },
+  { key: "IMC", label: "IMC", skill: "IMC", grayDays: [], slots: 2 },
   { key: "ITS", label: "ITS", skill: "ITS", grayDays: [] },
   { key: "CPU", label: "CPU", skill: "CPU", grayDays: [] },
   { key: "KARDIO_AMB", label: "Kardio-Ambulanz", skill: "KARDIO_AMB", grayDays: [] },

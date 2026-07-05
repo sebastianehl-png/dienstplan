@@ -27,7 +27,15 @@ export default async function WeekplanViewPage({ searchParams }: { searchParams:
   const users = await prisma.user.findMany({ select: { id: true, name: true } });
   const nameOf = new Map(users.map((u) => [u.id, u.name]));
   const lastName = (full: string) => full.trim().split(/\s+/).pop() ?? full;
-  const cellMap = new Map((plan?.cells ?? []).map((c) => [`${c.rowKey}|${c.day}`, c]));
+  // Pro Zelle können mehrere Plätze belegt sein
+  const cellMap = new Map<string, { userId: string | null; text: string | null; slot: number }[]>();
+  for (const c of plan?.cells ?? []) {
+    const key = `${c.rowKey}|${c.day}`;
+    const arr = cellMap.get(key) ?? [];
+    arr.push({ userId: c.userId, text: c.text, slot: c.slot });
+    cellMap.set(key, arr);
+  }
+  for (const arr of cellMap.values()) arr.sort((a, b) => a.slot - b.slot);
   const dates = [0, 1, 2, 3, 4].map((i) => addDays(week, i));
 
   const prev = addDays(week, -7);
@@ -76,12 +84,17 @@ export default async function WeekplanViewPage({ searchParams }: { searchParams:
                     <td className="max-w-44 border-t border-zinc-100 px-3 py-1.5 font-medium text-zinc-800">{row.label}</td>
                     {[0, 1, 2, 3, 4].map((day) => {
                       if (row.grayDays.includes(day)) return <td key={day} className="border-t border-l border-zinc-100 bg-zinc-200/70" />;
-                      const c = cellMap.get(`${row.key}|${day}`);
-                      const text = c?.text ?? (c?.userId ? lastName(nameOf.get(c.userId) ?? "") : "");
-                      const mine = c?.userId === me.id;
+                      const entries = (cellMap.get(`${row.key}|${day}`) ?? []).filter((c) => c.userId || c.text);
+                      const mine = entries.some((c) => c.userId === me.id);
                       return (
-                        <td key={day} className={`border-t border-l border-zinc-100 px-2 py-1.5 ${mine ? "bg-blue-50 font-medium text-blue-900" : "text-zinc-700"}`}>
-                          {text || "–"}
+                        <td key={day} className={`border-t border-l border-zinc-100 px-2 py-1.5 ${mine ? "bg-blue-50" : "text-zinc-700"}`}>
+                          {entries.length === 0
+                            ? "–"
+                            : entries.map((c, i) => (
+                                <div key={i} className={c.userId === me.id ? "font-medium text-blue-900" : ""}>
+                                  {c.text ?? lastName(nameOf.get(c.userId!) ?? "")}
+                                </div>
+                              ))}
                         </td>
                       );
                     })}

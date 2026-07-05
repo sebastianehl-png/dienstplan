@@ -101,8 +101,13 @@ async function main() {
         { userId: heyne.id, skill: "ITS_KONSIL" },
       ],
     });
-    await prisma.rowDefault.create({ data: { rowKey: "ITS", userId: heyne.id } });
-    await prisma.rowDefault.create({ data: { rowKey: "ITS_KONSIL", userId: heyne.id } });
+    for (const rowKey of ["ITS", "ITS_KONSIL"]) {
+      await prisma.rowDefault.upsert({
+        where: { rowKey_slot: { rowKey, slot: 0 } },
+        update: { userId: heyne.id },
+        create: { rowKey, slot: 0, userId: heyne.id },
+      });
+    }
   }
 
   const n = await prisma.user.count();

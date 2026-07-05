@@ -12,7 +12,7 @@ import { skillValidOn } from "./skills";
 import { WEEK_ROWS } from "./weekplan-def";
 import { getTypeMap } from "./absence-types";
 
-export type GeneratedCell = { rowKey: string; day: number; userId: string | null; text: string | null };
+export type GeneratedCell = { rowKey: string; day: number; slot: number; userId: string | null; text: string | null };
 export type WeekReport = {
   gaps: { rowKey: string; day: number; reason: string }[];
   doubleBookings: { rowKey: string; day: number; userName: string }[];
@@ -60,7 +60,7 @@ export async function generateWeekPlan(weekStart: string): Promise<WeekGenResult
   ]);
 
   const nameOf = new Map(users.map((u) => [u.id, u.name]));
-  const defaultByRow = new Map(defaults.filter((d) => d.userId).map((d) => [d.rowKey, d.userId!]));
+  const defaultBySlot = new Map(defaults.filter((d) => d.userId).map((d) => [`${d.rowKey}|${d.slot}`, d.userId!]));
 
   // Abwesenheit: userId -> Set(dayIndex)
   const absentOn = new Map<string, Set<number>>();
@@ -111,8 +111,8 @@ export async function generateWeekPlan(weekStart: string): Promise<WeekGenResult
   const hasSkill = (u: (typeof users)[number], skill: string, day: number) =>
     u.skills.some((s) => s.skill === skill && skillValidOn(s, dates[day]));
 
-  function assign(rowKey: string, day: number, userId: string | null, text: string | null, short: boolean) {
-    cells.push({ rowKey, day, userId, text });
+  function assign(rowKey: string, day: number, slot: number, userId: string | null, text: string | null, short: boolean) {
+    cells.push({ rowKey, day, slot, userId, text });
     if (userId) {
       if (!short) bump(dayLoad, `${userId}|${day}`);
       bump(weekRowCount, `${userId}|${rowKey}`);
@@ -125,16 +125,16 @@ export async function generateWeekPlan(weekStart: string): Promise<WeekGenResult
 
       // Abwesenheiten-Zeile: automatisch aus der App
       if (row.autoAbsences) {
-        assign(row.key, day, null, absentLabelByDay[day].join(", ") || null, true);
+        assign(row.key, day, 0, null, absentLabelByDay[day].join(", ") || null, true);
         continue;
       }
 
       // Rufbereitschaft: aus dem Jahres-Dienstplan
       if (row.fromYearPlan) {
         const uid = rufByDay.get(day) ?? null;
-        if (uid) assign(row.key, day, uid, null, true);
+        if (uid) assign(row.key, day, 0, uid, null, true);
         else {
-          assign(row.key, day, null, null, true);
+          assign(row.key, day, 0, null, null, true);
           report.gaps.push({ rowKey: row.key, day, reason: "Kein (freigegebener) Jahres-Dienstplan für diesen Tag" });
         }
         continue;
@@ -142,58 +142,74 @@ export async function generateWeekPlan(weekStart: string): Promise<WeekGenResult
 
       if (!row.skill) continue;
 
-      // Kandidaten: Fähigkeit gültig, anwesend, keine Regel-Sperre
-      const eligible = users.filter(
-        (u) => hasSkill(u, row.skill!, day) && !isAbsent(u.id, day) && !isBlocked(u.id, row.key, day)
-      );
+      const slots = row.slots ?? 1;
+      const takenInCell = new Set<string>(); // niemand doppelt in derselben Zelle
 
-      if (eligible.length === 0) {
-        assign(row.key, day, null, null, !!row.short);
-        const anySkill = users.some((u) => hasSkill(u, row.skill!, day));
-        report.gaps.push({
-          rowKey: row.key,
-          day,
-          reason: anySkill ? "Alle geeigneten Personen abwesend/gesperrt" : "Niemand hat diese Fähigkeit",
-        });
-        continue;
-      }
+      for (let slot = 0; slot < slots; slot++) {
+        const defId = defaultBySlot.get(`${row.key}|${slot}`);
+        // Zusätzliche Plätze (>0) werden nur befüllt, wenn ein Standard-OA gesetzt ist;
+        // sonst bleiben sie für manuelle Einträge frei.
+        if (slot > 0 && !defId) continue;
 
-      // Standard-Besetzung hat Vorrang, wenn verfügbar
-      const defId = defaultByRow.get(row.key);
-      if (defId) {
-        const def = eligible.find((u) => u.id === defId);
-        if (def) {
-          assign(row.key, day, def.id, null, !!row.short);
+        // Kandidaten: Fähigkeit gültig, anwesend, keine Regel-Sperre, noch nicht in dieser Zelle
+        const eligible = users.filter(
+          (u) => !takenInCell.has(u.id) && hasSkill(u, row.skill!, day) && !isAbsent(u.id, day) && !isBlocked(u.id, row.key, day)
+        );
+
+        if (eligible.length === 0) {
+          if (slot === 0) {
+            assign(row.key, day, slot, null, null, !!row.short);
+            const anySkill = users.some((u) => hasSkill(u, row.skill!, day));
+            report.gaps.push({
+              rowKey: row.key,
+              day,
+              reason: anySkill ? "Alle geeigneten Personen abwesend/gesperrt" : "Niemand hat diese Fähigkeit",
+            });
+          } else if (defId) {
+            const defUser = users.find((u) => u.id === defId);
+            if (defUser) report.defaultsReplaced.push({ rowKey: row.key, day, defaultName: defUser.name, reason: "kein Ersatz verfügbar" });
+          }
           continue;
         }
-        const defUser = users.find((u) => u.id === defId);
-        if (defUser) {
-          report.defaultsReplaced.push({
-            rowKey: row.key,
-            day,
-            defaultName: defUser.name,
-            reason: isAbsent(defId, day) ? "abwesend" : isBlocked(defId, row.key, day) ? "Spezialregel" : "Fähigkeit fehlt/abgelaufen",
-          });
-        }
-      }
 
-      // Faire Auswahl: Historie + Woche + Tagesbelegung (Doppelbelegung vermeiden)
-      let best: (typeof users)[number] | null = null;
-      let bestScore = Infinity;
-      for (const u of eligible) {
-        const load = row.short ? 0 : dayLoad.get(`${u.id}|${day}`) ?? 0;
-        const score =
-          (histCount.get(`${u.id}|${row.key}`) ?? 0) * 10 +
-          (weekRowCount.get(`${u.id}|${row.key}`) ?? 0) * 100 +
-          load * 1000;
-        if (score < bestScore) {
-          bestScore = score;
-          best = u;
+        // Standard-Besetzung hat Vorrang, wenn verfügbar
+        if (defId) {
+          const def = eligible.find((u) => u.id === defId);
+          if (def) {
+            assign(row.key, day, slot, def.id, null, !!row.short);
+            takenInCell.add(def.id);
+            continue;
+          }
+          const defUser = users.find((u) => u.id === defId);
+          if (defUser) {
+            report.defaultsReplaced.push({
+              rowKey: row.key,
+              day,
+              defaultName: defUser.name,
+              reason: isAbsent(defId, day) ? "abwesend" : isBlocked(defId, row.key, day) ? "Spezialregel" : "Fähigkeit fehlt/abgelaufen",
+            });
+          }
         }
+
+        // Faire Auswahl: Historie + Woche + Tagesbelegung (Doppelbelegung vermeiden)
+        let best: (typeof users)[number] | null = null;
+        let bestScore = Infinity;
+        for (const u of eligible) {
+          const load = row.short ? 0 : dayLoad.get(`${u.id}|${day}`) ?? 0;
+          const score =
+            (histCount.get(`${u.id}|${row.key}`) ?? 0) * 10 +
+            (weekRowCount.get(`${u.id}|${row.key}`) ?? 0) * 100 +
+            load * 1000;
+          if (score < bestScore) {
+            bestScore = score;
+            best = u;
+          }
+        }
+        const chosenLoad = row.short ? 0 : dayLoad.get(`${best!.id}|${day}`) ?? 0;
+        assign(row.key, day, slot, best!.id, null, !!row.short);
+        takenInCell.add(best!.id);
+        if (chosenLoad > 0) report.doubleBookings.push({ rowKey: row.key, day, userName: best!.name });
       }
-      const chosenLoad = row.short ? 0 : dayLoad.get(`${best!.id}|${day}`) ?? 0;
-      assign(row.key, day, best!.id, null, !!row.short);
-      if (chosenLoad > 0) report.doubleBookings.push({ rowKey: row.key, day, userName: best!.name });
     }
   }
 

@@ -16,7 +16,7 @@ export default async function WeekplanSettingsPage() {
     prisma.rowDefault.findMany(),
     prisma.specialRule.findMany({ orderBy: { weekday: "asc" } }),
   ]);
-  const defaultByRow = new Map(defaults.map((d) => [d.rowKey, d.userId]));
+  const defaultBySlot = new Map(defaults.map((d) => [`${d.rowKey}|${d.slot}`, d.userId]));
   const nameOf = new Map(users.map((u) => [u.id, u.name]));
 
   const fillableRows = WEEK_ROWS.filter((r) => r.skill && !r.fromYearPlan);
@@ -36,10 +36,21 @@ export default async function WeekplanSettingsPage() {
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {fillableRows.map((row) => {
             const options = users.filter((u) => u.skills.some((s) => s.skill === row.skill)).map((u) => ({ id: u.id, name: u.name }));
+            const slots = row.slots ?? 1;
             return (
-              <div key={row.key} className="flex items-center justify-between gap-2 rounded-lg border border-zinc-100 px-3 py-2">
-                <span className="text-sm text-zinc-700">{row.label}</span>
-                <DefaultSelect rowKey={row.key} value={defaultByRow.get(row.key) ?? null} options={options} />
+              <div key={row.key} className="space-y-1.5 rounded-lg border border-zinc-100 px-3 py-2">
+                <div className="text-sm text-zinc-700">
+                  {row.label}
+                  {slots > 1 && <span className="ml-1 text-xs text-zinc-400">(bis {slots} Personen)</span>}
+                </div>
+                <div className="flex flex-col gap-1">
+                  {Array.from({ length: slots }, (_, slot) => (
+                    <div key={slot} className="flex items-center gap-2">
+                      {slots > 1 && <span className="w-4 text-xs text-zinc-400">{slot + 1}.</span>}
+                      <DefaultSelect rowKey={row.key} slot={slot} value={defaultBySlot.get(`${row.key}|${slot}`) ?? null} options={options} />
+                    </div>
+                  ))}
+                </div>
               </div>
             );
           })}

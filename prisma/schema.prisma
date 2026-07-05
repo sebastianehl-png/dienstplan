@@ -69,21 +69,25 @@ model WeekPlan {
 }
 
 model WeekCell {
-  id         String   @id @default(cuid())
-  plan       WeekPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
-  planId     String
-  rowKey     String // Zeile, z.B. HK1, KONSILE (Katalog in src/lib/weekplan-def.ts)
-  day        Int // 0 = Montag … 4 = Freitag
-  userId     String? // eingeteilte Person
-  text       String? // manueller Freitext (überschreibt Anzeige)
+  id     String   @id @default(cuid())
+  plan   WeekPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  planId String
+  rowKey String // Zeile, z.B. HK1, KONSILE (Katalog in src/lib/weekplan-def.ts)
+  day    Int // 0 = Montag … 4 = Freitag
+  slot   Int      @default(0) // Platz innerhalb der Zelle (Zeilen mit Mehrfachbesetzung)
+  userId String? // eingeteilte Person
+  text   String? // manueller Freitext (überschreibt Anzeige)
 
-  @@unique([planId, rowKey, day])
+  @@unique([planId, rowKey, day, slot])
 }
 
-// Standard-Besetzung je Zeile (z.B. Heyne → ITS); wird nur bei Abwesenheit ersetzt.
+// Standard-Besetzung je Zeile und Platz (z.B. Heyne → ITS); nur bei Abwesenheit ersetzt.
 model RowDefault {
-  rowKey String  @id
+  rowKey String
+  slot   Int     @default(0)
   userId String?
+
+  @@id([rowKey, slot])
 }
 
 // Spezielle Regeln, z.B. "Körber kann jeden 2. Mittwoch keine Konsile machen".

@@ -238,7 +238,11 @@ async function main() {
       update: {},
       create: { userId: engel.id, skill: "ITS" },
     });
-    await prisma.rowDefault.upsert({ where: { rowKey: "ITS" }, update: { userId: engel.id }, create: { rowKey: "ITS", userId: engel.id } });
+    await prisma.rowDefault.upsert({
+      where: { rowKey_slot: { rowKey: "ITS", slot: 0 } },
+      update: { userId: engel.id },
+      create: { rowKey: "ITS", slot: 0, userId: engel.id },
+    });
   }
 
   // Spezialregel: Clara Dietrich kann jeden 2. Mittwoch keine Konsile machen (wie "Körber")

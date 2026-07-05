@@ -36,16 +36,21 @@ export async function GET(_req: Request, { params }: { params: Promise<{ weekSta
 
   const users = await prisma.user.findMany({ select: { id: true, name: true } });
   const nameOf = new Map(users.map((u) => [u.id, u.name]));
-  const cellMap = new Map(plan.cells.map((c) => [`${c.rowKey}|${c.day}`, c]));
+  // Pro Zelle können mehrere Plätze belegt sein (z.B. Normalstation bis 4)
+  const cellMap = new Map<string, { userId: string | null; text: string | null; slot: number }[]>();
+  for (const c of plan.cells) {
+    const key = `${c.rowKey}|${c.day}`;
+    const arr = cellMap.get(key) ?? [];
+    arr.push({ userId: c.userId, text: c.text, slot: c.slot });
+    cellMap.set(key, arr);
+  }
+  for (const arr of cellMap.values()) arr.sort((a, b) => a.slot - b.slot);
   const onCall = await weekendOnCall(weekStart);
 
   const font = "Arial";
-  const cellText = (rowKey: string, day: number): string => {
-    const c = cellMap.get(`${rowKey}|${day}`);
-    if (!c) return "";
-    if (c.text) return c.text;
-    if (c.userId) return lastName(nameOf.get(c.userId) ?? "");
-    return "";
+  const cellLines = (rowKey: string, day: number): string[] => {
+    const entries = (cellMap.get(`${rowKey}|${day}`) ?? []).filter((c) => c.userId || c.text);
+    return entries.map((c) => c.text ?? lastName(nameOf.get(c.userId!) ?? ""));
   };
 
   // Tabellenbreite: A4 quer minus Ränder ≈ 14000 DXA
@@ -54,23 +59,24 @@ export async function GET(_req: Request, { params }: { params: Promise<{ weekSta
   const DAY_W = Math.floor((TABLE_W - LABEL_W) / 5);
   const colWidths = [LABEL_W, DAY_W, DAY_W, DAY_W, DAY_W, TABLE_W - LABEL_W - 4 * DAY_W];
 
-  const mkCell = (text: string, opts: { bold?: boolean; gray?: boolean; width: number }) =>
+  const mkCell = (lines: string[], opts: { bold?: boolean; gray?: boolean; width: number }) =>
     new TableCell({
       borders,
       width: { size: opts.width, type: WidthType.DXA },
       shading: opts.gray ? { fill: GRAY, type: ShadingType.CLEAR } : undefined,
       margins: { top: 60, bottom: 60, left: 100, right: 100 },
-      children: [
-        new Paragraph({
-          children: [new TextRun({ text, bold: opts.bold, font, size: 20 })],
-        }),
-      ],
+      children: (lines.length > 0 ? lines : [""]).map(
+        (text) =>
+          new Paragraph({
+            children: [new TextRun({ text, bold: opts.bold, font, size: 20 })],
+          })
+      ),
     });
 
   const headerRow = new TableRow({
     children: [
-      mkCell("", { width: colWidths[0] }),
-      ...DAY_NAMES.map((d, i) => mkCell(d, { bold: true, width: colWidths[i + 1] })),
+      mkCell([""], { width: colWidths[0] }),
+      ...DAY_NAMES.map((d, i) => mkCell([d], { bold: true, width: colWidths[i + 1] })),
     ],
   });
 
@@ -78,9 +84,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ weekSta
     (row) =>
       new TableRow({
         children: [
-          mkCell(row.label, { bold: true, width: colWidths[0] }),
+          mkCell([row.label], { bold: true, width: colWidths[0] }),
           ...[0, 1, 2, 3, 4].map((day) =>
-            mkCell(row.grayDays.includes(day) ? "" : cellText(row.key, day), {
+            mkCell(row.grayDays.includes(day) ? [] : cellLines(row.key, day), {
               gray: row.grayDays.includes(day),
               width: colWidths[day + 1],
             })

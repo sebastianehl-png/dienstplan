@@ -71,7 +71,7 @@ export default async function WeekplanAdminPage({ searchParams }: { searchParams
   }
 
   const cells: GridData["cells"] = {};
-  if (plan) for (const c of plan.cells) cells[`${c.rowKey}|${c.day}`] = { userId: c.userId, text: c.text };
+  if (plan) for (const c of plan.cells) cells[`${c.rowKey}|${c.day}|${c.slot}`] = { userId: c.userId, text: c.text };
 
   const data: GridData = {
     weekStart: week,

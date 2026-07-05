@@ -545,10 +545,16 @@ export async function updateSkills(
 }
 
 // ============================ Wochenplan: Standard-OAs & Spezialregeln ============================
-export async function setRowDefault(rowKey: string, userId: string | null): Promise<ActionResult> {
+export async function setRowDefault(rowKey: string, slot: number, userId: string | null): Promise<ActionResult> {
   await requireStaff();
-  if (!ROW_BY_KEY.has(rowKey)) return { level: "error", message: "Unbekannte Zeile." };
-  await prisma.rowDefault.upsert({ where: { rowKey }, update: { userId }, create: { rowKey, userId } });
+  const row = ROW_BY_KEY.get(rowKey);
+  if (!row) return { level: "error", message: "Unbekannte Zeile." };
+  if (!Number.isInteger(slot) || slot < 0 || slot >= (row.slots ?? 1)) return { level: "error", message: "Ungültiger Platz." };
+  await prisma.rowDefault.upsert({
+    where: { rowKey_slot: { rowKey, slot } },
+    update: { userId },
+    create: { rowKey, slot, userId },
+  });
   revalidatePath("/admin/weekplan-settings");
   return { level: "ok", message: "Standard-Besetzung gespeichert." };
 }
@@ -591,7 +597,7 @@ export async function generateWeek(weekStart: string): Promise<ActionResult & { 
   await prisma.weekPlan.deleteMany({ where: { weekStart } });
   const plan = await prisma.weekPlan.create({ data: { weekStart, status: "DRAFT" } });
   await prisma.weekCell.createMany({
-    data: cells.map((c) => ({ planId: plan.id, rowKey: c.rowKey, day: c.day, userId: c.userId, text: c.text })),
+    data: cells.map((c) => ({ planId: plan.id, rowKey: c.rowKey, day: c.day, slot: c.slot, userId: c.userId, text: c.text })),
   });
   revalidatePath("/admin/weekplan");
   revalidatePath("/weekplan");
@@ -603,14 +609,21 @@ export async function generateWeek(weekStart: string): Promise<ActionResult & { 
   };
 }
 
-export async function updateWeekCell(weekStart: string, rowKey: string, day: number, userId: string | null, text: string | null): Promise<ActionResult> {
+export async function updateWeekCell(
+  weekStart: string,
+  rowKey: string,
+  day: number,
+  slot: number,
+  userId: string | null,
+  text: string | null
+): Promise<ActionResult> {
   await requireStaff();
   const plan = await prisma.weekPlan.findUnique({ where: { weekStart } });
   if (!plan) return { level: "error", message: "Kein Wochenplan vorhanden." };
   await prisma.weekCell.upsert({
-    where: { planId_rowKey_day: { planId: plan.id, rowKey, day } },
+    where: { planId_rowKey_day_slot: { planId: plan.id, rowKey, day, slot } },
     update: { userId, text },
-    create: { planId: plan.id, rowKey, day, userId, text },
+    create: { planId: plan.id, rowKey, day, slot, userId, text },
   });
   revalidatePath("/admin/weekplan");
   revalidatePath("/weekplan");

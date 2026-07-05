@@ -5,7 +5,17 @@ import { useRouter } from "next/navigation";
 import { setRowDefault, createSpecialRule, deleteSpecialRule, type ActionResult } from "@/lib/actions";
 import { DAY_NAMES } from "@/lib/weekplan-def";
 
-export function DefaultSelect({ rowKey, value, options }: { rowKey: string; value: string | null; options: { id: string; name: string }[] }) {
+export function DefaultSelect({
+  rowKey,
+  slot,
+  value,
+  options,
+}: {
+  rowKey: string;
+  slot: number;
+  value: string | null;
+  options: { id: string; name: string }[];
+}) {
   const router = useRouter();
   const [current, setCurrent] = useState(value ?? "");
   const [pending, start] = useTransition();
@@ -13,14 +23,14 @@ export function DefaultSelect({ rowKey, value, options }: { rowKey: string; valu
   function change(next: string) {
     setCurrent(next);
     start(async () => {
-      await setRowDefault(rowKey, next || null);
+      await setRowDefault(rowKey, slot, next || null);
       router.refresh();
     });
   }
 
   return (
     <select value={current} disabled={pending} onChange={(e) => change(e.target.value)} className="rounded border border-zinc-300 px-2 py-1 text-sm">
-      <option value="">– keine (fair verteilen) –</option>
+      <option value="">{slot === 0 ? "– keine (fair verteilen) –" : "– keiner (Platz bleibt frei) –"}</option>
       {options.map((o) => (
         <option key={o.id} value={o.id}>
           {o.name}
