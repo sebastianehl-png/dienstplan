@@ -21,7 +21,7 @@ export const SKILLS: SkillDef[] = [
   { code: "BRONCHO", label: "Bronchoskopie", forRole: "OBERARZT", dates: "fromTo" },
   { code: "PNEUMO_AMB", label: "Pneumologische Ambulanz", forRole: "OBERARZT", dates: "fromTo" },
   { code: "KONSILE", label: "Konsile", forRole: "OBERARZT", dates: "fromTo" },
-  { code: "ITS_KONSIL", label: "ITS-Konsil", forRole: "OBERARZT", dates: "fromTo" },
+  { code: "ITS_KONSIL", label: "ITS-Konsile", forRole: "OBERARZT", dates: "fromTo" },
   { code: "NORMALSTATION", label: "Normalstation", forRole: "OBERARZT", dates: "fromTo" },
   { code: "IMC", label: "IMC", forRole: "OBERARZT", dates: "fromTo" },
   { code: "ITS", label: "ITS", forRole: "OBERARZT", dates: "fromTo" },

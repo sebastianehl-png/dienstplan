@@ -28,7 +28,7 @@ export const WEEK_ROWS: RowDef[] = [
   { key: "BRONCHO", label: "Bronchoskopie", skill: "BRONCHO", grayDays: [] },
   { key: "PNEUMO_AMB", label: "Pneumo. Ambulanz", skill: "PNEUMO_AMB", grayDays: [] },
   { key: "KONSILE", label: "Konsile", skill: "KONSILE", grayDays: [] },
-  { key: "ITS_KONSIL", label: "ITS-Konsil", skill: "ITS_KONSIL", grayDays: [] },
+  { key: "ITS_KONSIL", label: "ITS-Konsile", skill: "ITS_KONSIL", grayDays: [] },
   { key: "NORMALSTATION", label: "Normalstation", skill: "NORMALSTATION", grayDays: [], slots: 4 },
   { key: "IMC", label: "IMC", skill: "IMC", grayDays: [], slots: 2 },
   { key: "ITS", label: "ITS", skill: "ITS", grayDays: [] },
