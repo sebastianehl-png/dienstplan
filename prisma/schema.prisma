@@ -183,6 +183,7 @@ model Assignment {
   user   User   @relation(fields: [userId], references: [id])
   userId String
 
+  @@unique([planId, date, slot])
   @@index([planId, date])
 }
 

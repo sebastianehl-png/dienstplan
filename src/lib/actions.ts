@@ -753,6 +753,28 @@ export async function generatePlan(year: number): Promise<ActionResult> {
   };
 }
 
+// Einzelnen Dienst im Jahresplan manuell ändern (wie Wochenplan-Zellen).
+export async function updateAssignment(year: number, date: string, slot: string, userId: string | null): Promise<ActionResult> {
+  await requireStaff();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !["WEEKDAY", "HK", "VG"].includes(slot)) {
+    return { level: "error", message: "Ungültige Zelle." };
+  }
+  const plan = await prisma.plan.findUnique({ where: { year } });
+  if (!plan) return { level: "error", message: "Kein Dienstplan vorhanden." };
+  if (userId === null) {
+    await prisma.assignment.deleteMany({ where: { planId: plan.id, date, slot } });
+  } else {
+    await prisma.assignment.upsert({
+      where: { planId_date_slot: { planId: plan.id, date, slot } },
+      update: { userId },
+      create: { planId: plan.id, date, slot, userId },
+    });
+  }
+  revalidatePath("/admin/plan");
+  revalidatePath("/plan");
+  return { level: "ok", message: "Dienst gespeichert." };
+}
+
 export async function releasePlan(year: number): Promise<ActionResult> {
   await requireStaff();
   await prisma.plan.update({ where: { year }, data: { status: "RELEASED", releasedAt: new Date() } });
