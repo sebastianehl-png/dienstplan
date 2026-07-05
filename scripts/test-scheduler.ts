@@ -35,6 +35,7 @@ async function main() {
     absences: new Map(),
     wishes: new Map(),
     maxWeekendsPerMonth: 2,
+    vgWeekendGapWeeks: 6,
   });
 
   // Deckungsprüfung: jeder Tag muss mind. einen VG haben; Wochenende/Feiertag auch HK.

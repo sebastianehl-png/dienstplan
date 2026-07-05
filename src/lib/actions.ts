@@ -101,6 +101,7 @@ async function getSettings() {
       maxConcurrentAbsent: 5,
       vacationDaysPerYear: 30,
       maxWeekendsPerMonth: 2,
+      vgWeekendGapWeeks: 6,
     }
   );
 }
@@ -659,10 +660,11 @@ export async function updateSettings(_prev: unknown, formData: FormData): Promis
   const maxConcurrentAbsent = Number(formData.get("maxConcurrentAbsent"));
   const vacationDaysPerYear = Number(formData.get("vacationDaysPerYear"));
   const maxWeekendsPerMonth = Number(formData.get("maxWeekendsPerMonth"));
+  const vgWeekendGapWeeks = Number(formData.get("vgWeekendGapWeeks"));
   await prisma.settings.upsert({
     where: { id: 1 },
-    update: { maxConcurrentAbsent, vacationDaysPerYear, maxWeekendsPerMonth },
-    create: { id: 1, maxConcurrentAbsent, vacationDaysPerYear, maxWeekendsPerMonth },
+    update: { maxConcurrentAbsent, vacationDaysPerYear, maxWeekendsPerMonth, vgWeekendGapWeeks },
+    create: { id: 1, maxConcurrentAbsent, vacationDaysPerYear, maxWeekendsPerMonth, vgWeekendGapWeeks },
   });
   revalidatePath("/admin/settings");
   return { level: "ok", message: "Einstellungen gespeichert." };
@@ -730,6 +732,7 @@ export async function generatePlan(year: number): Promise<ActionResult> {
     absences,
     wishes,
     maxWeekendsPerMonth: settings.maxWeekendsPerMonth,
+    vgWeekendGapWeeks: settings.vgWeekendGapWeeks ?? 6,
   };
   const { assignments, report } = generateSchedule(input);
 

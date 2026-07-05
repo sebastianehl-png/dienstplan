@@ -6,7 +6,7 @@ import { updateSettings, type ActionResult } from "@/lib/actions";
 export default function SettingsForm({
   values,
 }: {
-  values: { maxConcurrentAbsent: number; vacationDaysPerYear: number; maxWeekendsPerMonth: number };
+  values: { maxConcurrentAbsent: number; vacationDaysPerYear: number; maxWeekendsPerMonth: number; vgWeekendGapWeeks: number };
 }) {
   const [result, action, pending] = useActionState<ActionResult | null, FormData>(
     (prev, fd) => updateSettings(prev, fd),
@@ -18,6 +18,7 @@ export default function SettingsForm({
       <Num label="Max. gleichzeitig im Urlaub" name="maxConcurrentAbsent" def={values.maxConcurrentAbsent} />
       <Num label="Urlaubstage / Jahr (Mo–Fr)" name="vacationDaysPerYear" def={values.vacationDaysPerYear} />
       <Num label="Max. Wochenenden / Monat" name="maxWeekendsPerMonth" def={values.maxWeekendsPerMonth} />
+      <Num label="Vordergrund-Ärzte: Wochenende alle … Wochen" name="vgWeekendGapWeeks" def={values.vgWeekendGapWeeks} />
       <div className="sm:col-span-3">
         <button
           type="submit"

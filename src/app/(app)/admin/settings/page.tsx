@@ -15,6 +15,7 @@ export default async function SettingsPage() {
     maxConcurrentAbsent: 5,
     vacationDaysPerYear: 30,
     maxWeekendsPerMonth: 2,
+    vgWeekendGapWeeks: 6,
   };
   const holidays = await prisma.holiday.findMany({ where: { year: PLAN_YEAR }, orderBy: { date: "asc" } });
 

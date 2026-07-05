@@ -25,6 +25,10 @@ export type SchedulerInput = {
   absences: Map<string, Set<string>>; // date -> userIds abwesend
   wishes: Map<string, Set<string>>; // date -> userIds mit Freiwunsch
   maxWeekendsPerMonth: number;
+  // Reine Vordergrund-Ärzte (Kat. 2): frühestens alle N Wochen wieder ein
+  // Wochenend-/Feiertagsdienst. Ist niemand "fällig", übernimmt der
+  // Hintergrund-Arzt das Wochenende solo.
+  vgWeekendGapWeeks?: number;
 };
 
 export type SchedAssignment = { date: string; slot: "WEEKDAY" | "HK" | "VG"; userId: string };
@@ -56,8 +60,18 @@ type Stat = {
 
 export function generateSchedule(input: SchedulerInput): SchedulerResult {
   const { year, users, holidays, absences, wishes, maxWeekendsPerMonth } = input;
+  const vgGapDays = Math.max(0, (input.vgWeekendGapWeeks ?? 6)) * 7;
 
   const cat1 = users.filter((u) => u.category === 1);
+
+  // Letzter Wochenend-/Feiertagseinsatz der reinen Vordergrund-Ärzte (für den Mindestabstand)
+  const lastVgDuty = new Map<string, string>();
+  const daysBetween = (a: string, b: string) =>
+    Math.round((Date.parse(b + "T00:00:00Z") - Date.parse(a + "T00:00:00Z")) / 86400000);
+  const vgDue = (userId: string, date: string) => {
+    const last = lastVgDuty.get(userId);
+    return !last || daysBetween(last, date) >= vgGapDays;
+  };
 
   const stats = new Map<string, Stat>();
   for (const u of users) {
@@ -167,11 +181,13 @@ export function generateSchedule(input: SchedulerInput): SchedulerResult {
     bumpMonth(hk.id, month);
     recordWish(hk.id, blockDays);
 
-    // Vordergrund Sa+So: bevorzugt Kat. 2 (Split), sonst der HK-Arzt selbst (Solo).
+    // Vordergrund Sa+So: Kat. 2 nur, wenn der Mindestabstand eingehalten ist
+    // (Ziel: reine Vordergrund-Ärzte im Schnitt nur alle N Wochen) – sonst Solo.
     const vgDays = [sat, sun];
-    const cat2avail = users.filter((u) => u.category === 2);
+    const cat2avail = users.filter((u) => u.category === 2 && vgDue(u.id, fri));
     const vg = pick(cat2avail, vgDays, (s) => s.weekendUnits, month);
     if (vg) {
+      lastVgDuty.set(vg.id, fri);
       for (const d of vgDays) assignments.push({ date: d, slot: "VG", userId: vg.id });
       for (const d of vgDays) block(vg.id, d);
       block(vg.id, mon); // Montag frei
@@ -204,8 +220,9 @@ export function generateSchedule(input: SchedulerInput): SchedulerResult {
     bumpMonth(hk.id, month);
     recordWish(hk.id, [date]);
 
-    const vg = pick(users.filter((u) => u.category === 2), [date], (s) => s.weekendUnits, month);
+    const vg = pick(users.filter((u) => u.category === 2 && vgDue(u.id, date)), [date], (s) => s.weekendUnits, month);
     if (vg) {
+      lastVgDuty.set(vg.id, date);
       assignments.push({ date, slot: "VG", userId: vg.id });
       block(vg.id, date);
       const vs = stats.get(vg.id)!;

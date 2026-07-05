@@ -191,6 +191,7 @@ model Settings {
   maxConcurrentAbsent Int @default(5) // max. gleichzeitig abwesend
   vacationDaysPerYear Int @default(30) // Werktage Mo–Fr
   maxWeekendsPerMonth Int @default(2) // Obergrenze Wochenenden/Monat pro Arzt
+  vgWeekendGapWeeks   Int @default(6) // reine Vordergrund-Ärzte: min. Wochen zwischen Wochenenddiensten
 }
 
 // Subgruppen / Teams (Mehrfachzugehörigkeit über UserGroup)
