@@ -24,6 +24,10 @@ export default async function AdminPlanPage() {
           Status:{" "}
           {status === "NONE" ? "noch kein Plan" : status === "DRAFT" ? "vorläufig (nicht freigegeben)" : "freigegeben ✓"}
         </p>
+        <p className="mt-1 text-sm text-zinc-400">
+          Eingeplant werden Oberärzt:innen nach Fähigkeit: <strong>Rufbereitschaft (Hintergrund)</strong> = Werktagsdienst + HK am
+          Wochenende, <strong>nur Rufbereitschaft (Vordergrund)</strong> = Wochenend-Vordergrund. Ohne Ruf-Fähigkeit keine Einplanung.
+        </p>
       </div>
 
       <PlanActions year={PLAN_YEAR} status={status} />
@@ -80,7 +84,7 @@ export default async function AdminPlanPage() {
                 <thead className="text-left text-zinc-500">
                   <tr>
                     <th className="py-1 pr-4">Arzt</th>
-                    <th className="py-1 pr-4">Kat.</th>
+                    <th className="py-1 pr-4">Rufdienst</th>
                     <th className="py-1 pr-4">Werktage</th>
                     <th className="py-1 pr-4">Wochenende/Feiertag</th>
                     <th className="py-1 pr-4">HK</th>
@@ -91,7 +95,7 @@ export default async function AdminPlanPage() {
                   {report.distribution.map((d) => (
                     <tr key={d.userId} className="border-t border-zinc-100">
                       <td className="py-1 pr-4 text-zinc-800">{d.name}</td>
-                      <td className="py-1 pr-4">{d.category}</td>
+                      <td className="py-1 pr-4">{d.category === 1 ? "HG" : "VG"}</td>
                       <td className="py-1 pr-4">{d.weekdayCount}</td>
                       <td className="py-1 pr-4">{d.weekendUnits}</td>
                       <td className="py-1 pr-4">{d.hkCount}</td>

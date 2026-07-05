@@ -53,7 +53,7 @@ export default function MatrixGrid({
   requests,
   currentUserId,
 }: {
-  users: { id: string; name: string; category: number }[];
+  users: { id: string; name: string }[];
   days: string[];
   holidays: string[];
   cells: Record<string, Cell>;
@@ -88,7 +88,7 @@ export default function MatrixGrid({
             {users.map((u) => (
               <tr key={u.id} className={u.id === currentUserId ? "bg-blue-50/40" : ""}>
                 <td className="sticky left-0 z-10 whitespace-nowrap border-t border-zinc-100 bg-white px-3 py-1.5 text-zinc-800">
-                  {u.name} <span className="text-[10px] text-zinc-400">K{u.category}</span>
+                  {u.name}
                 </td>
                 {days.map((d) => {
                   const cell = cells[`${u.id}|${d}`];

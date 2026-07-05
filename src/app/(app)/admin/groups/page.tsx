@@ -13,12 +13,12 @@ export default async function GroupsPage() {
     prisma.group.findMany({ orderBy: { name: "asc" }, include: { _count: { select: { members: true } } } }),
     prisma.user.findMany({
       where: { active: true },
-      orderBy: [{ category: "asc" }, { name: "asc" }],
-      select: { id: true, name: true, category: true, groups: { select: { groupId: true } } },
+      orderBy: [{ name: "asc" }],
+      select: { id: true, name: true, groups: { select: { groupId: true } } },
     }),
   ]);
 
-  const userRows = users.map((u) => ({ id: u.id, name: u.name, category: u.category, groupIds: u.groups.map((g) => g.groupId) }));
+  const userRows = users.map((u) => ({ id: u.id, name: u.name, groupIds: u.groups.map((g) => g.groupId) }));
   const groupCols = groups.map((g) => ({ id: g.id, name: g.name }));
 
   return (

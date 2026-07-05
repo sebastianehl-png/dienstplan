@@ -34,7 +34,7 @@ export default async function PersonnelDetailPage({ params }: { params: Promise<
         <Link href="/admin/personnel" className="text-sm text-blue-700 hover:underline">← Zurück zur Übersicht</Link>
         <h1 className="mt-1 text-2xl font-semibold text-zinc-900">{user.name}</h1>
         <p className="text-zinc-500">
-          {user.email} · {jobLabel} · {roleLabel} · Dienstplan-Kat. {user.category}
+          {user.email} · {jobLabel} · {roleLabel}
           {user.groups.length > 0 && <> · {user.groups.map((g) => g.group.name).join(", ")}</>}
         </p>
       </div>

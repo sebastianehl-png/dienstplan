@@ -14,10 +14,11 @@ export default function UserForm({ canCreateAdmin }: { canCreateAdmin: boolean }
       <Field label="Name" name="name" placeholder="Vorname Nachname" />
       <Field label="E-Mail" name="email" type="email" placeholder="name@klinik.de" />
       <div>
-        <label className="block text-xs font-medium text-zinc-600">Kategorie</label>
-        <select name="category" className="mt-1 w-full rounded-lg border border-zinc-300 px-2 py-2 text-sm">
-          <option value="1">Kat. 1 (VG + HK)</option>
-          <option value="2">Kat. 2 (nur VG)</option>
+        <label className="block text-xs font-medium text-zinc-600">Funktion</label>
+        <select name="jobRole" className="mt-1 w-full rounded-lg border border-zinc-300 px-2 py-2 text-sm">
+          <option value="OBERARZT">Oberarzt/-ärztin</option>
+          <option value="ASSISTENZARZT">Assistenzarzt/-ärztin</option>
+          <option value="VERWALTUNG">Verwaltung</option>
         </select>
       </div>
       <div>

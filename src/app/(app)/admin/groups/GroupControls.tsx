@@ -21,7 +21,7 @@ export function MembershipEditor({
   users,
   groups,
 }: {
-  users: { id: string; name: string; category: number; groupIds: string[] }[];
+  users: { id: string; name: string; groupIds: string[] }[];
   groups: { id: string; name: string }[];
 }) {
   const router = useRouter();
@@ -69,7 +69,7 @@ export function MembershipEditor({
           {users.map((u) => (
             <tr key={u.id} className="border-t border-zinc-100">
               <td className="whitespace-nowrap px-3 py-1.5 text-zinc-800">
-                {u.name} <span className="text-[10px] text-zinc-400">K{u.category}</span>
+                {u.name}
               </td>
               {groups.map((g) => (
                 <td key={g.id} className="px-3 py-1.5 text-center">

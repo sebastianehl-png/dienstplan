@@ -9,7 +9,7 @@ export default function CarryoverEditor({
   users,
 }: {
   year: number;
-  users: { id: string; name: string; category: number; days: number }[];
+  users: { id: string; name: string; days: number }[];
 }) {
   const router = useRouter();
   const [vals, setVals] = useState<Record<string, number>>(Object.fromEntries(users.map((u) => [u.id, u.days])));
@@ -39,7 +39,7 @@ export default function CarryoverEditor({
           {users.map((u) => (
             <tr key={u.id} className="border-t border-zinc-100">
               <td className="px-4 py-2 text-zinc-800">
-                {u.name} <span className="text-[10px] text-zinc-400">K{u.category}</span>
+                {u.name}
               </td>
               <td className="px-4 py-2">
                 <input

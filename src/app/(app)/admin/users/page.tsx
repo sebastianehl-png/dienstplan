@@ -12,7 +12,7 @@ export default async function UsersPage() {
   const isAdmin = me.role === "ADMIN";
 
   const users = await prisma.user.findMany({
-    orderBy: [{ category: "asc" }, { name: "asc" }],
+    orderBy: [{ jobRole: "asc" }, { name: "asc" }],
     include: { groups: { include: { group: true } } },
   });
 
@@ -31,7 +31,7 @@ export default async function UsersPage() {
             <tr>
               <th className="px-4 py-2">Name</th>
               <th className="px-4 py-2">E-Mail</th>
-              <th className="px-4 py-2">Kat.</th>
+              <th className="px-4 py-2">Funktion</th>
               <th className="px-4 py-2">Gruppen</th>
               <th className="px-4 py-2">Rolle</th>
               <th className="px-4 py-2">Status</th>
@@ -43,7 +43,7 @@ export default async function UsersPage() {
               <tr key={u.id} className="border-t border-zinc-100">
                 <td className="px-4 py-2 text-zinc-800">{u.name}</td>
                 <td className="px-4 py-2 font-mono text-xs text-zinc-500">{u.email}</td>
-                <td className="px-4 py-2">{u.category}</td>
+                <td className="px-4 py-2">{u.jobRole === "ASSISTENZARZT" ? "Assistent:in" : u.jobRole === "VERWALTUNG" ? "Verwaltung" : "Oberarzt/-ärztin"}</td>
                 <td className="px-4 py-2 text-xs text-zinc-500">{u.groups.map((g) => g.group.name).join(", ") || "–"}</td>
                 <td className="px-4 py-2">
                   <RoleSelect userId={u.id} role={u.role} canSetAdmin={isAdmin} />

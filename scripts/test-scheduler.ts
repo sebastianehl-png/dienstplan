@@ -10,7 +10,22 @@ const prisma = new PrismaClient({ adapter });
 
 async function main() {
   const year = new Date().getFullYear();
-  const users = await prisma.user.findMany({ where: { active: true }, select: { id: true, name: true, category: true } });
+  // Rufdienst-Eignung aus Fähigkeiten: RUF_HG => Kat.1-Logik, nur RUF_VG => Kat.2-Logik
+  const allOAs = await prisma.user.findMany({
+    where: { active: true, jobRole: "OBERARZT" },
+    select: { id: true, name: true, skills: { select: { skill: true, validFrom: true, validTo: true } } },
+  });
+  const overlaps = (s: { validFrom: string | null; validTo: string | null }) =>
+    (!s.validFrom || s.validFrom <= `${year}-12-31`) && (!s.validTo || s.validTo >= `${year}-01-01`);
+  const users: { id: string; name: string; category: number }[] = [];
+  const excluded: string[] = [];
+  for (const u of allOAs) {
+    const has = (c: string) => u.skills.some((s) => s.skill === c && overlaps(s));
+    if (has("RUF_HG")) users.push({ id: u.id, name: u.name, category: 1 });
+    else if (has("RUF_VG")) users.push({ id: u.id, name: u.name, category: 2 });
+    else excluded.push(u.name);
+  }
+  if (excluded.length) console.log("Ohne Ruf-Fähigkeit (nicht eingeplant):", excluded.join(", "));
   const holidays = await prisma.holiday.findMany({ where: { year } });
 
   const { assignments, report } = generateSchedule({

@@ -60,7 +60,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </nav>
           <div className="ml-auto flex items-center gap-3 text-sm">
             <Link href="/password" className="text-zinc-500 hover:text-zinc-800">
-              {user.name} · Kat. {user.category} · {roleLabel}
+              {user.name} · {roleLabel}
             </Link>
             <form action={signOut}>
               <button className="rounded-md border border-zinc-300 px-3 py-1.5 text-zinc-700 hover:bg-zinc-100">Abmelden</button>

@@ -19,8 +19,8 @@ export default async function MatrixPage({ searchParams }: { searchParams: Promi
   const groups = await prisma.group.findMany({ orderBy: { name: "asc" } });
   const users = await prisma.user.findMany({
     where: { active: true, ...(groupId ? { groups: { some: { groupId } } } : {}) },
-    orderBy: [{ category: "asc" }, { name: "asc" }],
-    select: { id: true, name: true, category: true },
+    orderBy: [{ name: "asc" }],
+    select: { id: true, name: true },
   });
 
   const monthPrefix = `${PLAN_YEAR}-${pad(month)}`;

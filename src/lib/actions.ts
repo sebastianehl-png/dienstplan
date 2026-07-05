@@ -481,20 +481,22 @@ export async function createUser(_prev: unknown, formData: FormData): Promise<Ac
   const actor = await requireStaff();
   const name = String(formData.get("name") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
-  const category = Number(formData.get("category"));
+  let jobRole = String(formData.get("jobRole") ?? "OBERARZT");
   let role = String(formData.get("role") ?? "DOCTOR");
   const password = String(formData.get("password") ?? "");
-  if (!name || !email || ![1, 2].includes(category) || password.length < 4) {
+  if (!name || !email || password.length < 4) {
     return { level: "error", message: "Bitte alle Felder korrekt ausfüllen (Passwort ≥ 4 Zeichen)." };
   }
+  if (!["OBERARZT", "ASSISTENZARZT", "VERWALTUNG"].includes(jobRole)) jobRole = "OBERARZT";
   if (!["DOCTOR", "SUBADMIN", "ADMIN"].includes(role)) role = "DOCTOR";
   if (role === "ADMIN" && actor.role !== "ADMIN") {
     return { level: "error", message: "Nur Voll-Admins dürfen Admin-Rechte vergeben." };
   }
   if (await prisma.user.findUnique({ where: { email } })) return { level: "error", message: "Diese E-Mail ist bereits vergeben." };
-  await prisma.user.create({ data: { name, email, category, role, passwordHash: await hashPassword(password) } });
+  // category ist nur noch ein Altlast-Feld; die Rufdienst-Eignung kommt aus den Fähigkeiten.
+  await prisma.user.create({ data: { name, email, category: 1, jobRole, role, passwordHash: await hashPassword(password) } });
   revalidatePath("/admin/users");
-  return { level: "ok", message: `${name} angelegt.` };
+  return { level: "ok", message: `${name} angelegt – Fähigkeiten bitte unter Personal pflegen.` };
 }
 
 export async function updateUserRole(userId: string, role: "DOCTOR" | "SUBADMIN" | "ADMIN"): Promise<ActionResult> {
@@ -662,14 +664,41 @@ export async function updateSettings(_prev: unknown, formData: FormData): Promis
 }
 
 // ============================ Planerstellung (Staff) ============================
+// Rufdienst-Eignung aus den Fähigkeiten ableiten (statt fester Kategorie):
+//  Rufbereitschaft (Hintergrund) => wie frühere Kat. 1 (Werktag + HK am Wochenende)
+//  nur Rufbereitschaft (Vordergrund) => wie frühere Kat. 2 (Wochenend-Vordergrund)
+//  keine Ruf-Fähigkeit => wird nicht eingeplant
+function rufCategory(skills: { skill: string; validFrom: string | null; validTo: string | null }[], year: number): 1 | 2 | null {
+  const overlapsYear = (s: { validFrom: string | null; validTo: string | null }) =>
+    (!s.validFrom || s.validFrom <= `${year}-12-31`) && (!s.validTo || s.validTo >= `${year}-01-01`);
+  const has = (code: string) => skills.some((s) => s.skill === code && overlapsYear(s));
+  if (has("RUF_HG")) return 1;
+  if (has("RUF_VG")) return 2;
+  return null;
+}
+
 export async function generatePlan(year: number): Promise<ActionResult> {
   await requireStaff();
   const settings = await getSettings();
-  // Nur Oberärzte werden im Rufdienst-Jahresplan eingeteilt.
-  const users = await prisma.user.findMany({
+  // Nur Oberärzte mit Rufdienst-Fähigkeit werden im Jahresplan eingeteilt.
+  const allOAs = await prisma.user.findMany({
     where: { active: true, jobRole: "OBERARZT" },
-    select: { id: true, name: true, category: true },
+    select: { id: true, name: true, skills: { select: { skill: true, validFrom: true, validTo: true } } },
   });
+  const users: { id: string; name: string; category: number }[] = [];
+  const excluded: string[] = [];
+  for (const u of allOAs) {
+    const cat = rufCategory(u.skills, year);
+    if (cat) users.push({ id: u.id, name: u.name, category: cat });
+    else excluded.push(u.name);
+  }
+  if (users.filter((u) => u.category === 1).length === 0) {
+    return {
+      level: "error",
+      message:
+        "Kein Oberarzt hat die Fähigkeit „Rufbereitschaft (Hintergrund)“ – bitte zuerst unter Personal die Fähigkeiten pflegen.",
+    };
+  }
 
   let holidays = await prisma.holiday.findMany({ where: { year } });
   if (holidays.length === 0) {
@@ -706,9 +735,13 @@ export async function generatePlan(year: number): Promise<ActionResult> {
   revalidatePath("/admin/plan");
   revalidatePath("/plan");
   const issues = report.uncovered.length;
+  const exclNote = excluded.length > 0 ? ` ${excluded.length} OA ohne Rufdienst-Fähigkeit nicht eingeplant (${excluded.join(", ")}).` : "";
   return {
     level: issues > 0 ? "warn" : "ok",
-    message: issues > 0 ? `Vorläufiger Plan erstellt – ${issues} unbesetzte Stelle(n), siehe Engpassbericht.` : "Vorläufiger Plan erstellt – keine unbesetzten Stellen.",
+    message:
+      (issues > 0
+        ? `Vorläufiger Plan erstellt – ${issues} unbesetzte Stelle(n), siehe Engpassbericht.`
+        : "Vorläufiger Plan erstellt – keine unbesetzten Stellen.") + exclNote,
   };
 }
 

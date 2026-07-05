@@ -11,11 +11,11 @@ export default async function CarryoverPage() {
   if (!isStaff(me.role)) redirect("/dashboard");
 
   const [users, carryovers] = await Promise.all([
-    prisma.user.findMany({ where: { active: true }, orderBy: [{ category: "asc" }, { name: "asc" }], select: { id: true, name: true, category: true } }),
+    prisma.user.findMany({ where: { active: true }, orderBy: [{ name: "asc" }], select: { id: true, name: true } }),
     prisma.carryover.findMany({ where: { year: PLAN_YEAR } }),
   ]);
   const map = new Map(carryovers.map((c) => [c.userId, c.days]));
-  const rows = users.map((u) => ({ id: u.id, name: u.name, category: u.category, days: map.get(u.id) ?? 0 }));
+  const rows = users.map((u) => ({ id: u.id, name: u.name, days: map.get(u.id) ?? 0 }));
 
   return (
     <div className="space-y-4">
